@@ -1,5 +1,6 @@
-from lxml import etree
+import xml.etree.ElementTree as etree
 import re
+from liveplan import session_steps
 
 
 class Session:
@@ -30,12 +31,12 @@ class Session:
                         'pulse': value if action == 'pulse' else 0
                         })
             
-            elif time == '0' and action == 'power':
+            elif time == '0':
                 self.steps = []
                 self.steps.append({
                         'time': 0,
-                        'power': value,
-                        'pulse': 0
+                        'power': value if action == 'power' else 0,
+                        'pulse': value if action == 'pulse' else 0
                         })
         
         for i in range(0, self.duration - len(self.steps)):
@@ -48,7 +49,7 @@ class Session:
     
     def parse_timestring(self, s):
         duration = 0
-        for component in re.findall('(\d*(h|m|s))', s):
+        for component in re.findall(r'(\d*(h|m|s))', s):
             if component[1] == 'h':
                 duration += int(component[0].split('h')[0]) * 3600
             if component[1] == 'm':
@@ -64,3 +65,8 @@ class Session:
         except:
             s = self.steps[-1]
         return s
+
+    def update_live_plan(self, plan):
+        steps = session_steps(plan)
+        self.steps = steps
+        self.duration = len(steps)

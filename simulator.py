@@ -3,7 +3,10 @@
 # hence repeated re-runs)
 
 
-class Simulator:
+from devices import ErgometerDevice
+
+
+class Simulator(ErgometerDevice):
     def __init__(self, pulse=135.0):
         self.pulse = pulse
         self.rpm = 50

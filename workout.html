@@ -1,0 +1,2055 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pyergometer - træningsplan</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef2f6;
+      --card: #ffffff;
+      --ink: #17212b;
+      --muted: #5b6b7a;
+      --line: #dbe3ea;
+      --field: #f7f9fb;
+      --accent: #145da0;
+      --accent-ink: #ffffff;
+      --go: #1f8a4c;
+      --stop: #c62828;
+      --radius: 14px;
+      --shadow: 0 1px 2px rgba(16, 32, 48, .06), 0 4px 16px rgba(16, 32, 48, .06);
+      font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    * { box-sizing: border-box; }
+    body {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 1rem 4rem;
+      background: var(--bg);
+      -webkit-tap-highlight-color: transparent;
+    }
+    h1, h2, h3 { margin: 0; letter-spacing: -.01em; }
+    h2 { font-size: 1.15rem; }
+    h3 { font-size: 1rem; }
+
+    /* Sticky control bar: the things used during every workout */
+    .topbar {
+      position: sticky;
+      top: env(safe-area-inset-top, 0px);
+      z-index: 10;
+      margin: 0 -1rem 1rem;
+      padding: .75rem 1rem;
+      background: rgba(238, 242, 246, .92);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+    }
+    .topbar-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .75rem 1rem;
+    }
+    .brand { display: flex; align-items: center; gap: .6rem; margin-right: auto; }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 2.4rem;
+      height: 2.4rem;
+      border-radius: 10px;
+      color: #fff;
+      background: linear-gradient(135deg, #bf3434, #e2683c);
+      font-size: 1.25rem;
+    }
+    .brand h1 { font-size: 1.2rem; }
+    .brand small { display: block; color: var(--muted); font-size: .8rem; }
+    .profile-pick { display: flex; align-items: center; gap: .5rem; font-weight: 600; }
+    .profile-pick select { min-width: 9rem; }
+    #start {
+      min-width: 12rem;
+      min-height: 3.25rem;
+      padding: .6rem 1.5rem;
+      font-size: 1.15rem;
+      font-weight: 700;
+      border-radius: 999px;
+      box-shadow: 0 4px 14px rgba(20, 93, 160, .3);
+    }
+    #start.primary { background: var(--go); border-color: var(--go); box-shadow: 0 4px 14px rgba(31, 138, 76, .3); }
+    #start.danger { box-shadow: 0 4px 14px rgba(198, 40, 40, .35); }
+    #status { min-height: 1.3em; margin-top: .5rem; font-weight: 600; font-size: .92rem; }
+    #status:empty { display: none; }
+
+    /* Cards */
+    .panel, details.panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1.1rem 1.2rem;
+      margin-bottom: 1rem;
+    }
+    .panel-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: .5rem 1rem;
+      margin-bottom: .6rem;
+    }
+    details.panel { padding: 0; }
+    details.panel > summary {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      padding: 1rem 1.2rem;
+      cursor: pointer;
+      list-style: none;
+      font-weight: 700;
+      font-size: 1.05rem;
+      min-height: 3.25rem;
+    }
+    details.panel > summary::-webkit-details-marker { display: none; }
+    details.panel > summary::after {
+      content: "";
+      width: .55rem;
+      height: .55rem;
+      margin-left: auto;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(45deg);
+      transition: transform .15s ease;
+      flex: none;
+    }
+    details.panel[open] > summary::after { transform: rotate(-135deg); }
+    details.panel > summary .hint {
+      font-weight: 400;
+      font-size: .88rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+    details.panel > .details-body {
+      padding: 0 1.2rem 1.2rem;
+      border-top: 1px solid var(--line);
+      padding-top: 1rem;
+    }
+    .section-label {
+      margin: 1.75rem .25rem .6rem;
+      color: var(--muted);
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .subsection { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
+
+    /* Form controls */
+    .settings, .fields, .actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: .9rem;
+    }
+    label { display: grid; gap: .35rem; font-weight: 600; font-size: .92rem; }
+    fieldset {
+      margin: 0;
+      padding: .5rem .75rem .7rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    legend { padding: 0 .3rem; font-weight: 600; font-size: .92rem; }
+    .settings fieldset label { display: flex; align-items: center; gap: .45rem; font-weight: 400; min-height: 2rem; }
+    .settings fieldset input[type="radio"] { margin: 0; width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+    input, select, button {
+      font: inherit;
+      min-height: 2.6rem;
+      padding: .5rem .7rem;
+      color: var(--ink);
+      border: 1px solid #b5c2ce;
+      border-radius: 8px;
+      background: var(--field);
+    }
+    input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible {
+      outline: 3px solid rgba(20, 93, 160, .35);
+      outline-offset: 2px;
+    }
+    input[type="number"] { width: 8rem; }
+    input[type="checkbox"] { min-height: 0; width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+    input:disabled, select:disabled { background: #e9eef2; color: #7b8894; }
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      background: #fff;
+      transition: background .12s ease, transform .05s ease;
+    }
+    button:hover:not(:disabled) { background: #f0f4f8; }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button.primary { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+    button.primary:hover:not(:disabled) { background: #0f4c85; }
+    button.danger { color: #fff; background: var(--stop); border-color: var(--stop); }
+    button.danger:hover:not(:disabled) { background: #a51f1f; }
+    button.ghost { background: transparent; border-color: var(--line); }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    #start.primary:hover:not(:disabled) { background: #19733f; }
+
+    /* Workout blocks */
+    .block h3 { margin: 0 0 .75rem; }
+    .block .actions { margin-top: .75rem; }
+    #blocks { display: none; }
+    #blocks.has-blocks { display: block; margin-bottom: 1rem; }
+    #blocks .block {
+      margin: 0;
+      padding: 1rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    #blocks .block:first-child { padding-top: 0; }
+    #blocks .block:last-child { border-bottom: 0; }
+    .block[data-type="repeat"] .fields {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: .65rem;
+    }
+    .block[data-type="repeat"] .fields label { min-width: 0; font-size: .85rem; }
+    .block[data-type="repeat"] .fields input[type="number"] { width: 100%; padding: .45rem; }
+
+    /* Chart */
+    #summary { font-size: .92rem; }
+    #pulse-chart { display: block; width: 100%; min-height: 18rem; touch-action: none; }
+    #chart-message { min-height: 1.4em; font-size: .92rem; }
+    #chart-help { margin: .25rem 0 .5rem; font-size: .85rem; }
+    .chart-foot {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem 1rem;
+      margin-top: .5rem;
+    }
+    .chart-legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: .85rem; color: var(--muted); }
+    .legend-item { display: inline-flex; align-items: center; gap: .4rem; }
+    .legend-swatch { display: inline-block; width: 1rem; height: .8rem; border-radius: 2px; }
+    .legend-target { background: #4a90c2; }
+    .legend-break { background: #d5dce3; }
+    .legend-measured { height: 3px; background: #bf3434; }
+    .legend-progress { width: 0; height: .9rem; border-left: 2px dashed #293642; border-radius: 0; }
+
+    p { margin: .6rem 0 0; }
+    .muted { color: var(--muted); }
+    .error { color: var(--stop); }
+    .success { color: #176b36; }
+
+    /* Workout name above the chart */
+    #chart-title {
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .workout-name {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: .1rem .6rem;
+      margin: .15rem 0 .2rem;
+    }
+    #workout-name { font-size: 1.45rem; font-weight: 800; letter-spacing: -.01em; overflow-wrap: anywhere; }
+    #workout-name-state { font-size: .88rem; font-weight: 600; }
+    #workout-name-state.running { color: #c62828; }
+
+    /* Live pulse heart above the chart */
+    .chart-head { flex-wrap: nowrap; align-items: center; }
+    .chart-head > div:first-child { min-width: 0; }
+    .pulse-badge {
+      position: relative;
+      flex: none;
+      display: grid;
+      place-items: center;
+      width: 7.5rem;
+      height: 6.9rem;
+      color: #fff;
+    }
+    .pulse-badge svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .pulse-badge path { fill: #c62828; transition: fill .3s ease; }
+    .pulse-badge.idle path { fill: #c3ccd5; }
+    .pulse-badge.live svg { animation: heartbeat 1s ease-in-out infinite; transform-origin: 50% 55%; }
+    .pulse-value {
+      position: relative;
+      margin-top: -.5rem;
+      text-align: center;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    #pulse-now { display: block; font-size: 2.6rem; font-weight: 800; letter-spacing: -.03em; }
+    .pulse-value small { font-size: .8rem; font-weight: 600; opacity: .9; }
+    #pulse-target { margin-top: .2rem; text-align: center; font-size: .85rem; font-weight: 600; }
+    @keyframes heartbeat {
+      0%, 100% { transform: scale(1); }
+      15% { transform: scale(1.06); }
+      30% { transform: scale(.98); }
+      45% { transform: scale(1.03); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .pulse-badge.live svg { animation: none; }
+    }
+    .saved-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem; }
+    .saved-tick {
+      color: #176b36;
+      font-size: .88rem;
+      font-weight: 700;
+      opacity: 0;
+      transition: opacity .25s ease;
+    }
+    .saved-tick.show { opacity: 1; }
+    .details-body > .subsection:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+
+    @media (max-width: 640px) {
+      .brand { margin-right: 0; flex-basis: 100%; }
+      .profile-pick { flex: 1 1 auto; }
+      .profile-pick select { flex: 1; min-width: 0; }
+      #start { flex: 1 1 100%; }
+      .settings, .fields { align-items: stretch; flex-direction: column; }
+      input[type="number"], select { width: 100%; }
+      .block[data-type="repeat"] .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      details.panel > summary .hint { display: none; }
+      #pulse-chart { min-height: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-row">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">&#9829;</span>
+        <div>
+          <h1>Pyergometer</h1>
+          <small>Pulsstyret træning</small>
+        </div>
+      </div>
+      <label class="profile-pick" for="user-profile">Bruger
+        <select id="user-profile"></select>
+      </label>
+      <button id="start" class="primary" type="button">Start træning</button>
+    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+  </header>
+
+  <section class="panel" aria-labelledby="chart-title">
+    <div class="panel-head chart-head">
+      <div>
+        <h2 id="chart-title">Puls gennem træningen</h2>
+        <div class="workout-name">
+          <span id="workout-name">Ingen træning valgt</span>
+          <span id="workout-name-state" class="muted"></span>
+        </div>
+        <div id="summary" class="muted" aria-live="polite">Tilføj et interval eller en pause.</div>
+      </div>
+      <div>
+        <div id="pulse-badge" class="pulse-badge idle" role="img" aria-label="Aktuel puls: ingen måling">
+          <svg viewBox="0 0 100 92" aria-hidden="true">
+            <path d="M50 90 C22 70 2 52 2 29 C2 13 14 2 29 2 C39 2 46 8 50 16 C54 8 61 2 71 2 C86 2 98 13 98 29 C98 52 78 70 50 90 Z"/>
+          </svg>
+          <div class="pulse-value" aria-hidden="true"><span id="pulse-now">--</span><small>bpm</small></div>
+        </div>
+        <div id="pulse-target" class="muted">Ingen måling</div>
+      </div>
+    </div>
+    <div id="chart-message" class="muted" aria-live="polite">Grafen følger træningsplanen og opdateres én gang i sekundet.</div>
+    <svg id="pulse-chart" viewBox="0 0 900 400" role="img"
+         aria-label="Graf over ønsket og målt puls under træningen. Træk i blå mållinjer for at ændre puls og i orange diamanter for at ændre varighed."></svg>
+    <p id="chart-help" class="muted">Træk i en blå mållinje for at ændre pulsen, eller i en orange diamant for at ændre varigheden. Under træning slår ændringer igennem ved næste regulering.</p>
+    <div class="chart-foot">
+      <div class="chart-legend" aria-label="Signaturforklaring">
+        <span class="legend-item"><span class="legend-swatch legend-target"></span>Ønsket puls</span>
+        <span class="legend-item"><span class="legend-swatch legend-break"></span>Pause, lav watt</span>
+        <span class="legend-item"><span class="legend-swatch legend-measured"></span>Målt puls</span>
+        <span class="legend-item"><span class="legend-swatch legend-progress"></span>Forløb</span>
+      </div>
+      <button id="start-demo" class="ghost" type="button">&#9654; Livedemo</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="choose-title">
+    <div class="panel-head"><h2 id="choose-title">Vælg træning</h2></div>
+    <div>
+      <div class="actions">
+        <label for="saved-presets">Mine gemte træninger
+          <select id="saved-presets">
+            <option value="">Vælg opsætning</option>
+          </select>
+        </label>
+        <button id="load-preset" type="button">Indlæs</button>
+        <label for="builtin-template">Fælles skabeloner
+          <select id="builtin-template">
+            <option value="">Vælg fælles træningspas</option>
+            <option value="hiit-30-30">HIIT 30/30 (13 gentagelser)</option>
+          </select>
+        </label>
+        <button id="apply-template" type="button">Brug skabelon</button>
+      </div>
+      <p class="muted">Fælles skabeloner overskrives ikke. Tilpas passet og gem det under et nyt navn under &raquo;Gem træning&laquo;.</p>
+    </div>
+  </section>
+
+  <div class="section-label">Opsætning</div>
+
+  <details class="panel" id="profile-panel">
+    <summary><span id="profile-title">Brugerprofil</span><span id="profile-hint" class="hint"></span></summary>
+    <div class="details-body">
+      <div class="settings">
+        <fieldset>
+          <legend>Max-puls</legend>
+          <label><input type="radio" name="max-pulse-source" value="manual" checked> Vælg selv</label>
+          <label><input type="radio" name="max-pulse-source" value="birth_year"> Beregn ud fra fødselsår</label>
+        </fieldset>
+        <label for="max-pulse">Vælg max-puls (bpm)
+          <select id="max-pulse" required>
+            <option value="">Vælg max-puls</option>
+          </select>
+        </label>
+        <label for="birth-year">Fødselsår
+          <input id="birth-year" type="number" min="1900" max="2100" step="1" placeholder="Fx 1965" disabled>
+        </label>
+      </div>
+      <div class="saved-row">
+        <p id="max-pulse-result" class="muted" aria-live="polite">Vælg max-puls eller indtast fødselsår.</p>
+        <span id="max-pulse-saved" class="saved-tick" role="status"></span>
+      </div>
+      <p class="muted">Max-puls gemmes automatisk på profilen og bruges i alle træninger.</p>
+
+      <div class="subsection">
+        <div class="settings">
+          <fieldset>
+            <legend>Pulskilde til styring</legend>
+            <label><input type="radio" name="pulse-source" value="ergometer" checked> Ergometerets pulsmåler</label>
+            <label><input type="radio" name="pulse-source" value="watch"> Smartwatch via Bluetooth LE</label>
+          </fieldset>
+        </div>
+        <span id="watch-saved" class="saved-tick" role="status"></span>
+        <div id="watch-settings" hidden>
+          <div class="actions" style="margin-top: .9rem">
+            <button id="scan-watches" type="button">Søg efter Bluetooth-enheder</button>
+            <label for="watch-device">Vælg smartwatch
+              <select id="watch-device">
+                <option value="">Søg efter enheder først</option>
+              </select>
+            </label>
+            <button id="remove-watch" class="ghost" type="button" hidden>Fjern smartwatch</button>
+          </div>
+          <p id="watch-status" class="muted" aria-live="polite">Uret forbindes, når træningen startes. Hvis enheden står som ukendt, kan adressen hjælpe med at identificere den i Windows eller Huawei-overlayet.</p>
+        </div>
+      </div>
+
+      <div class="subsection">
+        <div class="settings">
+          <label for="new-profile-name">Opret ny bruger
+            <input id="new-profile-name" type="text" maxlength="60" placeholder="Fx Anna eller Peter">
+          </label>
+          <button id="create-profile" type="button">Opret bruger</button>
+        </div>
+        <p class="muted">Max-puls, smartwatch og gemte træninger hører til den valgte bruger.</p>
+      </div>
+    </div>
+  </details>
+
+  <details class="panel" id="plan-panel">
+    <summary><span id="plan-title">Træningsplan – intervaller og pauser</span></summary>
+    <div class="details-body">
+      <div id="blocks"></div>
+      <div class="actions">
+        <button id="add-interval" type="button">+ Interval</button>
+        <button id="add-break" type="button">+ Pause</button>
+        <button id="add-repeat" type="button">+ Gentagne intervaller</button>
+      </div>
+    </div>
+  </details>
+
+  <details class="panel">
+    <summary><span id="presets-title">Gem træning</span></summary>
+    <div class="details-body">
+      <div class="settings">
+        <label for="preset-name">Navn på opsætning
+          <input id="preset-name" type="text" maxlength="80" placeholder="Fx Rolig intervaltræning">
+        </label>
+        <button id="save-preset" type="button">Gem opsætning</button>
+      </div>
+      <p class="muted">Gemmes på den valgte bruger. Pulsmål gemmes i procent af max-puls.</p>
+    </div>
+  </details>
+
+  <details class="panel" id="settings-panel">
+    <summary><span id="settings-title">Indstillinger for cyklen</span><span id="settings-hint" class="hint"></span></summary>
+    <div class="details-body">
+      <div class="settings">
+        <label for="device-type">Cykeltype
+          <select id="device-type"></select>
+        </label>
+        <label for="device" id="device-label">Seriel port
+          <input id="device" type="text" placeholder="/dev/ttyUSB0 eller COM3">
+        </label>
+      </div>
+    </div>
+  </details>
+
+  <script>
+    (function () {
+      var maxPulse = document.getElementById('max-pulse');
+      var blocks = document.getElementById('blocks');
+      var summary = document.getElementById('summary');
+      var status = document.getElementById('status');
+      var startButton = document.getElementById('start');
+      var birthYearInput = document.getElementById('birth-year');
+      var workoutNameElement = document.getElementById('workout-name');
+      var workoutNameState = document.getElementById('workout-name-state');
+      var workoutName = null;
+      var loadedBlocksSignature = null;
+      var maxPulseSaved = document.getElementById('max-pulse-saved');
+      var watchSaved = document.getElementById('watch-saved');
+      var removeWatchButton = document.getElementById('remove-watch');
+      var profilePanel = document.getElementById('profile-panel');
+      var pulseBadge = document.getElementById('pulse-badge');
+      var pulseNow = document.getElementById('pulse-now');
+      var pulseTarget = document.getElementById('pulse-target');
+      var maxPulseResult = document.getElementById('max-pulse-result');
+      var builtinTemplate = document.getElementById('builtin-template');
+      var userProfile = document.getElementById('user-profile');
+      var newProfileName = document.getElementById('new-profile-name');
+      var presetName = document.getElementById('preset-name');
+      var savedPresets = document.getElementById('saved-presets');
+      var watchSettings = document.getElementById('watch-settings');
+      var watchDevice = document.getElementById('watch-device');
+      var watchStatus = document.getElementById('watch-status');
+      var pulseChart = document.getElementById('pulse-chart');
+      var chartMessage = document.getElementById('chart-message');
+      var chartHelp = document.getElementById('chart-help');
+      var busy = false;
+      var stopping = false;
+      var canStop = false;
+      var latestChart = null;
+      var chartPollBusy = false;
+      var chartRevision = 0;
+      var chartDrag = null;
+      var editedChartPlan = null;
+      var liveUpdateTimer = null;
+      var liveUpdateInFlight = false;
+      var liveUpdateQueued = false;
+      var activeProfile = null;
+      var profilesByName = {};
+      var svgNamespace = 'http://www.w3.org/2000/svg';
+
+      function rememberProfile(name) {
+        try {
+          window.localStorage.setItem('pyergometer-profile', name);
+        } catch (error) {
+          status.className = 'error';
+          status.textContent = 'Profilen er valgt, men browseren kunne ikke huske seneste bruger.';
+        }
+      }
+
+      for (var bpm = 100; bpm <= 220; bpm += 10) {
+        var option = document.createElement('option');
+        option.value = bpm;
+        option.textContent = bpm + ' bpm';
+        maxPulse.appendChild(option);
+      }
+
+      var deviceTypeSelect = document.getElementById('device-type');
+      var deviceTypes = @@DEVICE_TYPES@@;
+      deviceTypes.forEach(function (type) {
+        var option = document.createElement('option');
+        option.value = type.id;
+        option.textContent = type.label;
+        deviceTypeSelect.appendChild(option);
+      });
+      deviceTypeSelect.value = @@INITIAL_DEVICE_TYPE@@;
+      document.getElementById('device').value = @@INITIAL_DEVICE@@;
+
+      function selectedDeviceType() {
+        return deviceTypes.filter(function (type) {
+          return type.id === deviceTypeSelect.value;
+        })[0] || deviceTypes[0];
+      }
+
+      var currentYear = new Date().getFullYear();
+      birthYearInput.min = currentYear - 120;
+      birthYearInput.max = currentYear - 1;
+
+      function maxPulseSource() {
+        return document.querySelector('input[name="max-pulse-source"]:checked').value;
+      }
+
+      function selectedAge() {
+        if (!birthYearInput.value || !birthYearInput.validity.valid) return null;
+        return currentYear - parseInt(birthYearInput.value, 10);
+      }
+
+      function selectedMaxPulse() {
+        if (maxPulseSource() === 'birth_year') {
+          var age = selectedAge();
+          return age === null ? null : Math.floor(208 - 0.7 * age + 0.5);
+        }
+        return maxPulse.value ? parseInt(maxPulse.value, 10) : null;
+      }
+
+      function updateMaxPulseSource() {
+        var useBirthYear = maxPulseSource() === 'birth_year';
+        maxPulse.disabled = busy || useBirthYear;
+        maxPulse.required = !useBirthYear;
+        birthYearInput.disabled = busy || !useBirthYear;
+        birthYearInput.required = useBirthYear;
+        updateMaxPulseResult();
+        updateSummary();
+      }
+
+      function updateMaxPulseResult() {
+        if (maxPulseSource() === 'birth_year') {
+          if (selectedAge() !== null) {
+            maxPulseResult.textContent = 'Beregnet max-puls: ' + selectedMaxPulse() +
+              ' bpm (alder ' + selectedAge() + ')';
+          } else {
+            maxPulseResult.textContent = 'Max-puls beregnes som 208 − (0,7 × alder).';
+          }
+        } else if (maxPulse.value) {
+          maxPulseResult.textContent = 'Valgt max-puls: ' + maxPulse.value + ' bpm';
+        } else {
+          maxPulseResult.textContent = 'Vælg max-puls eller indtast fødselsår.';
+        }
+      }
+
+      function flashSaved(element, text) {
+        element.textContent = '✓ ' + text;
+        element.classList.add('show');
+        window.clearTimeout(element.hideTimer);
+        element.hideTimer = window.setTimeout(function () {
+          element.classList.remove('show');
+        }, 4000);
+      }
+
+      function requireMaxPulse() {
+        if (selectedMaxPulse() !== null) return true;
+        profilePanel.open = true;
+        status.className = 'error';
+        status.textContent = 'Vælg max-puls på brugerprofilen ' + (activeProfile || '') + ' først.';
+        return false;
+      }
+
+      function applyProfileMaxPulse() {
+        var profile = profilesByName[activeProfile];
+        var saved = profile && profile.max_pulse;
+        var source = saved ? saved.source : 'manual';
+        document.querySelector(
+          'input[name="max-pulse-source"][value="' + source + '"]'
+        ).checked = true;
+        maxPulse.value = saved && saved.source === 'manual' ? String(saved.value) : '';
+        birthYearInput.value = saved && saved.source === 'birth_year' ? saved.birth_year : '';
+        updateMaxPulseSource();
+      }
+
+      function saveProfileMaxPulse() {
+        var source = maxPulseSource();
+        var payload = null;
+        if (source === 'manual' && maxPulse.value) {
+          payload = {source: 'manual', value: parseInt(maxPulse.value, 10)};
+        } else if (source === 'birth_year' && selectedAge() !== null) {
+          payload = {source: 'birth_year', birth_year: parseInt(birthYearInput.value, 10)};
+        }
+        if (!payload || !activeProfile) return;
+        var profileName = activeProfile;
+        fetch('/api/profiles', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: 'save-max-pulse', profile: profileName, max_pulse: payload})
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme max-puls');
+            return data.profiles;
+          });
+        }).then(function (profiles) {
+          profiles.forEach(function (profile) {
+            profilesByName[profile.name] = profile;
+          });
+          flashSaved(maxPulseSaved, 'Gemt på ' + profileName);
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      }
+
+      function updatePulseBadge(data) {
+        var points = data && data.mode !== 'preview' ? data.points || [] : [];
+        var live = Boolean(data && data.active && points.length);
+        var last = points.length ? points[points.length - 1] : null;
+        pulseBadge.classList.toggle('live', live);
+        pulseBadge.classList.toggle('idle', !live);
+        pulseNow.textContent = live ? last.pulse : '--';
+        pulseBadge.setAttribute('aria-label', live
+          ? 'Aktuel puls: ' + last.pulse + ' slag i minuttet'
+          : 'Aktuel puls: ingen måling');
+        if (!live) {
+          pulseTarget.textContent = data && data.active ? 'Venter på puls' : 'Ingen måling';
+          return;
+        }
+        var block = ((data.plan && data.plan.blocks) || []).filter(function (item) {
+          return last.elapsed >= item.start && last.elapsed < item.end;
+        })[0];
+        pulseTarget.textContent = !block ? ''
+          : block.type === 'interval' ? 'Mål ' + block.pulse + ' bpm'
+            : 'Pause · ' + block.power + ' W';
+      }
+
+      function makeField(labelText, type, value, min, max, step, className) {
+        var label = document.createElement('label');
+        label.textContent = labelText;
+        var input = document.createElement('input');
+        input.type = type;
+        input.value = value;
+        input.min = min;
+        input.max = max;
+        input.step = step;
+        input.required = true;
+        if (className) input.className = className;
+        label.appendChild(input);
+        return label;
+      }
+
+      function updateSummary() {
+        var rows = blocks.querySelectorAll('.block');
+        var totalSeconds = 0;
+        var lines = [];
+        var selectedMax = selectedMaxPulse();
+
+        Array.prototype.forEach.call(rows, function (row, index) {
+          if (row.dataset.type === 'repeat') {
+            var count = parseInt(row.querySelector('.count').value, 10);
+            var workSeconds = parseInt(row.querySelector('.work-seconds').value, 10);
+            var recoverySeconds = parseInt(row.querySelector('.recovery-seconds').value, 10);
+            if (row.querySelector('.count').validity.valid &&
+                row.querySelector('.work-seconds').validity.valid &&
+                row.querySelector('.recovery-seconds').validity.valid) {
+              totalSeconds += count * (workSeconds + recoverySeconds);
+            }
+            lines.push(count + ' gentagelser · ' + workSeconds + ' sek. hårdt / ' +
+              recoverySeconds + ' sek. let');
+          } else {
+            var minutesField = row.querySelector('.minutes');
+            var minutes = parseFloat(minutesField.value);
+            if (minutesField.validity.valid && isFinite(minutes) && minutes > 0) {
+              totalSeconds += Math.round(minutes * 60);
+            }
+          }
+          if (row.dataset.type === 'interval') {
+            var percentField = row.querySelector('.percent');
+            var percent = parseInt(percentField.value, 10);
+            if (selectedMax && percentField.validity.valid && isFinite(percent)) {
+              var target = Math.floor((selectedMax * percent + 50) / 100);
+              lines.push('Interval ' + (index + 1) + ': ' + target + ' bpm (' + percent + '%)');
+            }
+          } else if (row.dataset.type === 'repeat') {
+            var workPercent = row.querySelector('.work-percent');
+            var recoveryPercent = row.querySelector('.recovery-percent');
+            if (selectedMax && workPercent.validity.valid && recoveryPercent.validity.valid) {
+              lines.push('Mål: ' + workPercent.value + '% hårdt / ' +
+                recoveryPercent.value + '% let');
+            }
+          }
+        });
+
+        var totalMinutes = Math.floor(totalSeconds / 60);
+        var remainingSeconds = totalSeconds % 60;
+        summary.textContent = rows.length
+          ? 'Samlet varighed: ' + totalMinutes + ' min' +
+            (remainingSeconds ? ' ' + remainingSeconds + ' sek.' : '') +
+            (lines.length ? ' · ' + lines.join(' · ') : '')
+          : 'Tilføj et interval eller en pause.';
+        renderChart(latestChart);
+        updateWorkoutName();
+      }
+
+      function liveWorkoutRunning() {
+        return latestChart && latestChart.mode === 'real' && latestChart.active;
+      }
+
+      function sendLiveUpdate() {
+        if (!liveWorkoutRunning()) return;
+        if (liveUpdateInFlight) {
+          liveUpdateQueued = true;
+          return;
+        }
+
+        var plan = getPlan();
+        liveUpdateInFlight = true;
+        fetch('/api/update', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(plan)
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke ændre den aktive træning');
+            return data;
+          });
+        }).then(function () {
+          if (!liveUpdateQueued) {
+            editedChartPlan = null;
+            status.className = 'success';
+            status.textContent = 'Live ændring sendt til ergometeret.';
+            pollChart();
+          }
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = 'Live ændring blev ikke gennemført: ' + error.message;
+        }).then(function () {
+          liveUpdateInFlight = false;
+          if (liveUpdateQueued) {
+            liveUpdateQueued = false;
+            sendLiveUpdate();
+          }
+        });
+      }
+
+      function scheduleLiveUpdate(immediate) {
+        if (!liveWorkoutRunning()) return;
+        editedChartPlan = chartPlanFromForm();
+        renderChart(latestChart);
+        if (liveUpdateTimer !== null) {
+          window.clearTimeout(liveUpdateTimer);
+          liveUpdateTimer = null;
+        }
+        if (immediate) {
+          sendLiveUpdate();
+        } else {
+          liveUpdateTimer = window.setTimeout(function () {
+            liveUpdateTimer = null;
+            sendLiveUpdate();
+          }, 250);
+        }
+      }
+
+      function chartPlanFromForm() {
+        var maximum = selectedMaxPulse();
+        var pulseUnit = maximum ? 'bpm' : 'percent';
+        var chartMaximum = maximum || 100;
+        var elapsed = 0;
+        var chartBlocks = [];
+        Array.prototype.forEach.call(blocks.querySelectorAll('.block'), function (row, index) {
+          if (row.dataset.type === 'repeat') {
+            var count = parseInt(row.querySelector('.count').value, 10);
+            var workSeconds = parseInt(row.querySelector('.work-seconds').value, 10);
+            var recoverySeconds = parseInt(row.querySelector('.recovery-seconds').value, 10);
+            var workPercent = parseInt(row.querySelector('.work-percent').value, 10);
+            var recoveryPercent = parseInt(row.querySelector('.recovery-percent').value, 10);
+            if (!row.querySelector('.count').validity.valid ||
+                !row.querySelector('.work-seconds').validity.valid ||
+                !row.querySelector('.recovery-seconds').validity.valid ||
+                !row.querySelector('.work-percent').validity.valid ||
+                !row.querySelector('.recovery-percent').validity.valid) return;
+            for (var repeatIndex = 0; repeatIndex < count; repeatIndex += 1) {
+              [
+                {duration: workSeconds, percent: workPercent, phase: 'work'},
+                {duration: recoverySeconds, percent: recoveryPercent, phase: 'recovery'}
+              ].forEach(function (phase) {
+                chartBlocks.push({
+                  type: 'interval',
+                  index: index,
+                  draggable: false,
+                  repeat_phase: phase.phase,
+                  start: elapsed,
+                  end: elapsed + phase.duration,
+                  pulse: maximum
+                    ? Math.floor((maximum * phase.percent + 50) / 100)
+                    : phase.percent,
+                  percent: phase.percent
+                });
+                elapsed += phase.duration;
+              });
+            }
+            return;
+          }
+          var minutes = parseFloat(row.querySelector('.minutes').value);
+          if (!isFinite(minutes) || minutes <= 0) return;
+          var duration = Math.round(minutes * 60);
+          if (row.dataset.type === 'interval') {
+            var percentField = row.querySelector('.percent');
+            var percent = parseInt(percentField.value, 10);
+            if (!percentField.validity.valid) return;
+            chartBlocks.push({
+              type: 'interval',
+              index: index,
+              start: elapsed,
+              end: elapsed + duration,
+              pulse: maximum ? Math.floor((maximum * percent + 50) / 100) : percent,
+              percent: percent
+            });
+          } else {
+            var powerField = row.querySelector('.power');
+            var power = parseInt(powerField.value, 10);
+            if (!powerField.validity.valid) return;
+            chartBlocks.push({
+              type: 'break',
+              index: index,
+              start: elapsed,
+              end: elapsed + duration,
+              power: power
+            });
+          }
+          elapsed += duration;
+        });
+        return {
+          max_pulse: chartMaximum,
+          pulse_unit: pulseUnit,
+          duration: elapsed,
+          blocks: chartBlocks
+        };
+      }
+
+      function svgElement(name, attributes, text) {
+        var element = document.createElementNS(svgNamespace, name);
+        Object.keys(attributes || {}).forEach(function (key) {
+          element.setAttribute(key, attributes[key]);
+        });
+        if (text !== undefined) element.textContent = text;
+        return element;
+      }
+
+      function timeTickStep(duration) {
+        var steps = [15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+        for (var index = 0; index < steps.length; index += 1) {
+          if (duration / steps[index] <= 8) return steps[index];
+        }
+        return steps[steps.length - 1];
+      }
+
+      function formatTickTime(seconds, step) {
+        if (step >= 60) return String(Math.round(seconds / 60));
+        var remainder = seconds % 60;
+        return Math.floor(seconds / 60) + ':' + (remainder < 10 ? '0' : '') + remainder;
+      }
+
+      function renderChart(data) {
+        var activeWorkout = data && data.mode === 'real' && data.active;
+        var plan = editedChartPlan || (activeWorkout && data.plan
+          ? data.plan
+          : chartPlanFromForm());
+        var editable = true;
+        pulseChart.textContent = '';
+        chartHelp.hidden = false;
+        if (!plan || !plan.duration || !plan.blocks.length) {
+          chartMessage.textContent = 'Vælg max-puls og tilføj træningsintervaller for at se grafen.';
+          return;
+        }
+
+        var width = 900;
+        var height = 400;
+        var left = 70;
+        var right = 875;
+        var top = 24;
+        var bottom = 340;
+        var plotWidth = right - left;
+        var plotHeight = bottom - top;
+        // While a duration handle is dragged the time scale stays put so the handle follows the pointer.
+        var timeScale = chartDrag && chartDrag.type === 'duration'
+          ? Math.max(chartDrag.scaleDuration, plan.duration)
+          : plan.duration;
+        var percentScale = plan.pulse_unit === 'percent';
+        var maxBpm = percentScale
+          ? 100
+          : Math.max(200, Math.ceil((plan.max_pulse + 10) / 50) * 50);
+        var x = function (seconds) { return left + seconds / timeScale * plotWidth; };
+        var y = function (bpm) { return bottom - bpm / maxBpm * plotHeight; };
+
+        pulseChart.appendChild(svgElement('title', {}, 'Ønsket og målt puls under træningen'));
+        pulseChart.appendChild(svgElement('desc', {},
+          'Søjler viser intervalmål i bpm, røde punkter viser målt puls og en stiplet streg viser forløbet.'));
+
+        var pulseStep = percentScale ? 20 : 50;
+        for (var pulse = 0; pulse <= maxBpm; pulse += pulseStep) {
+          var pulseY = y(pulse);
+          pulseChart.appendChild(svgElement('line', {
+            x1: left, x2: right, y1: pulseY, y2: pulseY,
+            stroke: '#dbe2e8', 'stroke-width': 1
+          }));
+          pulseChart.appendChild(svgElement('text', {
+            x: left - 12, y: pulseY + 4, 'text-anchor': 'end',
+            fill: '#526271', 'font-size': 12
+          }, String(pulse)));
+        }
+
+        var tickStep = timeTickStep(timeScale);
+        for (var tickTime = 0; tickTime <= timeScale; tickTime += tickStep) {
+          var tickX = x(tickTime);
+          pulseChart.appendChild(svgElement('line', {
+            x1: tickX, x2: tickX, y1: top, y2: bottom,
+            stroke: '#edf0f3', 'stroke-width': 1
+          }));
+          pulseChart.appendChild(svgElement('text', {
+            x: tickX, y: bottom + 22, 'text-anchor': 'middle',
+            fill: '#526271', 'font-size': 12
+          }, formatTickTime(tickTime, tickStep)));
+        }
+
+        plan.blocks.forEach(function (block) {
+          var barX = x(block.start);
+          var barWidth = Math.max(1, x(block.end) - barX);
+          if (block.type === 'interval') {
+            var barY = y(block.pulse);
+            pulseChart.appendChild(svgElement('rect', {
+              x: barX, y: barY, width: barWidth, height: Math.max(0, bottom - barY),
+              fill: '#4a90c2', opacity: .48
+            }));
+            pulseChart.appendChild(svgElement('line', {
+              x1: barX, x2: barX + barWidth, y1: barY, y2: barY,
+              stroke: '#24628f', 'stroke-width': 2
+            }));
+            if (editable && block.draggable !== false) {
+              pulseChart.appendChild(svgElement('line', {
+                x1: barX, x2: barX + barWidth, y1: barY, y2: barY,
+                stroke: 'transparent', 'stroke-width': 18, 'pointer-events': 'stroke',
+                'data-drag-type': 'target', 'data-block-index': block.index,
+                'aria-label': 'Træk for at ændre intervallets ønskede puls',
+                style: 'cursor:ns-resize'
+              }));
+            }
+          } else {
+            pulseChart.appendChild(svgElement('rect', {
+              x: barX, y: top, width: barWidth, height: plotHeight,
+              fill: '#d5dce3', opacity: .45
+            }));
+            if (barWidth > 48) {
+              pulseChart.appendChild(svgElement('text', {
+                x: barX + barWidth / 2, y: top + 15,
+                'text-anchor': 'middle', fill: '#526271', 'font-size': 11
+              }, block.power + ' W'));
+            }
+          }
+        });
+
+        var points = data && data.mode !== 'preview' ? data.points || [] : [];
+        if (points.length) {
+          var path = points.map(function (point, index) {
+            return (index ? 'L' : 'M') + x(point.elapsed) + ' ' + y(point.pulse);
+          }).join(' ');
+          pulseChart.appendChild(svgElement('path', {
+            d: path, fill: 'none', stroke: '#bf3434', 'stroke-width': 3,
+            'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+          }));
+        }
+
+        var elapsed = data && data.mode !== 'preview' ? data.elapsed || 0 : 0;
+        if (elapsed > 0) {
+          var progressX = x(Math.min(elapsed, plan.duration));
+          pulseChart.appendChild(svgElement('line', {
+            x1: progressX, x2: progressX, y1: top, y2: bottom,
+            stroke: '#293642', 'stroke-width': 2, 'stroke-dasharray': '6 5'
+          }));
+        }
+
+        pulseChart.appendChild(svgElement('line', {
+          x1: left, x2: left, y1: top, y2: bottom,
+          stroke: '#526271', 'stroke-width': 1.5
+        }));
+        pulseChart.appendChild(svgElement('line', {
+          x1: left, x2: right, y1: bottom, y2: bottom,
+          stroke: '#526271', 'stroke-width': 1.5
+        }));
+        if (editable) {
+          plan.blocks.forEach(function (block) {
+            if (block.draggable === false) return;
+            var boundaryX = x(block.end);
+            pulseChart.appendChild(svgElement('line', {
+              x1: boundaryX, x2: boundaryX, y1: top, y2: bottom,
+              stroke: '#c27618', 'stroke-width': 1, 'stroke-dasharray': '3 5',
+              opacity: .65
+            }));
+            pulseChart.appendChild(svgElement('polygon', {
+              points: boundaryX + ',' + (bottom - 8) + ' ' +
+                (boundaryX + 8) + ',' + bottom + ' ' +
+                boundaryX + ',' + (bottom + 8) + ' ' +
+                (boundaryX - 8) + ',' + bottom,
+              fill: '#c27618', stroke: '#fff', 'stroke-width': 1
+            }));
+            pulseChart.appendChild(svgElement('circle', {
+              cx: boundaryX, cy: bottom, r: 13,
+              fill: 'transparent', 'pointer-events': 'all',
+              'data-drag-type': 'duration', 'data-block-index': block.index,
+              'aria-label': 'Træk for at ændre sessionens varighed',
+              style: 'cursor:ew-resize'
+            }));
+          });
+        }
+        pulseChart.appendChild(svgElement('text', {
+          x: 18, y: top + plotHeight / 2,
+          transform: 'rotate(-90 18 ' + (top + plotHeight / 2) + ')',
+          'text-anchor': 'middle', fill: '#263442', 'font-size': 13
+        }, percentScale ? 'Puls (% af max)' : 'Puls (bpm)'));
+        pulseChart.appendChild(svgElement('text', {
+          x: left + plotWidth / 2, y: height - 8,
+          'text-anchor': 'middle', fill: '#263442', 'font-size': 13
+        }, tickStep < 60 ? 'Tid (min:sek)' : 'Tid (minutter)'));
+
+        if (data && data.mode === 'demo') {
+          chartMessage.textContent = data.active
+            ? 'Livedemo: målingerne er simulerede. Redigering gælder træningsplanen, ikke den igangværende demo.'
+            : 'Livedemo afsluttet. De røde målinger er simulerede, og planen kan redigeres.';
+        } else if (data && data.mode === 'real') {
+          chartMessage.textContent = data.active
+            ? 'Live: målt puls registreres cirka én gang i sekundet.'
+            : 'Træningen er afsluttet. Grafen viser målingerne, og planen kan redigeres.';
+        } else if (percentScale) {
+          chartMessage.textContent = 'Grafen viser dine pulsmål i procent af max. Vælg max-puls for at se bpm.';
+        } else {
+          chartMessage.textContent = 'Grafen viser planlagte pulsmål. Afspil livedemo for simulerede pulsmålinger.';
+        }
+      }
+
+      function chartPosition(event) {
+        var bounds = pulseChart.getBoundingClientRect();
+        var scale = Math.min(bounds.width / 900, bounds.height / 400);
+        return {
+          x: (event.clientX - bounds.left - (bounds.width - 900 * scale) / 2) / scale,
+          y: (event.clientY - bounds.top) / bounds.height * 400
+        };
+      }
+
+      function setBlockField(index, fieldName, value) {
+        var row = blocks.querySelectorAll('.block')[index];
+        if (!row) return;
+        var field = row.querySelector('.' + fieldName);
+        field.value = value;
+        field.dispatchEvent(new Event('input', {bubbles: true}));
+      }
+
+      pulseChart.addEventListener('pointerdown', function (event) {
+        var handle = event.target.closest('[data-drag-type]');
+        if (!handle || (busy && !liveWorkoutRunning())) return;
+        var index = parseInt(handle.getAttribute('data-block-index'), 10);
+        var row = blocks.querySelectorAll('.block')[index];
+        var plan = chartPlanFromForm();
+        if (!row || !plan || !plan.duration) return;
+        var position = chartPosition(event);
+        var dragType = handle.getAttribute('data-drag-type');
+        chartDrag = {
+          type: dragType,
+          index: index,
+          startClientX: event.clientX,
+          startY: position.y,
+          maxPulse: plan.max_pulse,
+          maxBpm: Math.max(200, Math.ceil((plan.max_pulse + 10) / 50) * 50),
+          plotHeight: 316,
+          minutes: parseFloat(row.querySelector('.minutes').value)
+        };
+        if (dragType === 'target') {
+          chartDrag.percent = parseInt(row.querySelector('.percent').value, 10);
+          chartDrag.pulse = Math.floor(
+            (plan.max_pulse * chartDrag.percent + 50) / 100);
+        } else {
+          chartDrag.startX = position.x;
+          chartDrag.scaleDuration = Math.max(plan.duration * 1.5, plan.duration + 5 * 60);
+          chartDrag.otherMinutes = 0;
+          Array.prototype.forEach.call(blocks.querySelectorAll('.block'), function (item, itemIndex) {
+            if (itemIndex !== index) {
+              if (item.dataset.type === 'repeat') {
+                var repeatSeconds = (parseInt(item.querySelector('.count').value, 10) || 0) *
+                  ((parseInt(item.querySelector('.work-seconds').value, 10) || 0) +
+                   (parseInt(item.querySelector('.recovery-seconds').value, 10) || 0));
+                chartDrag.otherMinutes += Math.ceil(repeatSeconds / 30) / 2;
+              } else {
+                chartDrag.otherMinutes += parseFloat(item.querySelector('.minutes').value) || 0;
+              }
+            }
+          });
+        }
+        pulseChart.setPointerCapture(event.pointerId);
+        if (dragType === 'duration') renderChart(latestChart);
+        event.preventDefault();
+      });
+
+      pulseChart.addEventListener('pointermove', function (event) {
+        if (!chartDrag) return;
+        var position = chartPosition(event);
+        if (chartDrag.type === 'target') {
+          var desiredPulse = chartDrag.pulse -
+            (position.y - chartDrag.startY) * chartDrag.maxBpm / chartDrag.plotHeight;
+          var percent = Math.max(1, Math.min(100,
+            Math.round(desiredPulse / chartDrag.maxPulse * 100)));
+          setBlockField(chartDrag.index, 'percent', percent);
+        } else {
+          // Same plot width as renderChart (805), so the handle moves with the pointer.
+          var deltaSeconds = (position.x - chartDrag.startX) / 805 * chartDrag.scaleDuration;
+          // Snap to half minutes, never shorter than 30 seconds.
+          var duration = Math.max(0.5, Math.min(
+            720 - chartDrag.otherMinutes, chartDrag.minutes + Math.round(deltaSeconds / 30) / 2));
+          if (duration !== parseFloat(blocks.querySelectorAll('.block')[chartDrag.index]
+              .querySelector('.minutes').value)) {
+            setBlockField(chartDrag.index, 'minutes', duration);
+          }
+        }
+        event.preventDefault();
+      });
+
+      function finishChartDrag(event) {
+        if (!chartDrag) return;
+        var wasDuration = chartDrag.type === 'duration';
+        chartDrag = null;
+        if (pulseChart.hasPointerCapture(event.pointerId)) {
+          pulseChart.releasePointerCapture(event.pointerId);
+        }
+        if (wasDuration) renderChart(latestChart);
+        scheduleLiveUpdate(true);
+      }
+
+      pulseChart.addEventListener('pointerup', finishChartDrag);
+      pulseChart.addEventListener('pointercancel', finishChartDrag);
+
+      function pollChart() {
+        if (chartPollBusy) return;
+        chartPollBusy = true;
+        var revision = chartRevision;
+        fetch('/api/chart').then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke hente pulsgrafens data');
+            return data;
+          });
+        }).then(function (data) {
+          if (revision === chartRevision) {
+            latestChart = data;
+            renderChart(data);
+            updatePulseBadge(data);
+            updateWorkoutName();
+          }
+        }).catch(function (error) {
+          chartMessage.textContent = error.message;
+        }).then(function () {
+          chartPollBusy = false;
+        });
+      }
+
+      function resetChart() {
+        chartRevision += 1;
+        return fetch('/api/chart/reset', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke nulstille grafen');
+            latestChart = {plan: null, elapsed: 0, points: [], mode: 'preview', active: false};
+            editedChartPlan = null;
+            renderChart(latestChart);
+          });
+        });
+      }
+
+      function resetFormForProfile() {
+        blocks.textContent = '';
+        blocks.classList.remove('has-blocks');
+        status.className = '';
+        status.textContent = '';
+        applyProfileMaxPulse();
+        setWorkoutName(null);
+        presetName.value = '';
+        builtinTemplate.value = '';
+        updatePresetOptions([]);
+        updateSummary();
+      }
+
+      function addBlock(type, values) {
+        values = values || {};
+        var row = document.createElement('fieldset');
+        row.className = 'block';
+        row.dataset.type = type;
+        if (values.label) row.dataset.label = values.label;
+
+        var title = document.createElement('h3');
+        title.textContent = values.label || (type === 'interval' ? 'Arbejdsinterval'
+          : type === 'repeat' ? 'Gentagne høj-/lavintensitetsintervaller'
+            : 'Pause med lav belastning');
+        row.appendChild(title);
+
+        var fields = document.createElement('div');
+        fields.className = 'fields';
+        if (type === 'repeat') {
+          fields.appendChild(makeField('Antal gentagelser', 'number',
+            values.count || 13, 1, 100, 1, 'count'));
+          fields.appendChild(makeField('Hårdt interval (sek.)', 'number',
+            values.work_seconds || 30, 1, 3600, 1, 'work-seconds'));
+          fields.appendChild(makeField('Hårdt mål (% af max)', 'number',
+            values.work_percent || 85, 1, 100, 1, 'work-percent'));
+          fields.appendChild(makeField('Let interval (sek.)', 'number',
+            values.recovery_seconds || 30, 1, 3600, 1, 'recovery-seconds'));
+          fields.appendChild(makeField('Let mål (% af max)', 'number',
+            values.recovery_percent || 60, 1, 100, 1, 'recovery-percent'));
+        } else if (type === 'interval') {
+          fields.appendChild(makeField('Ønsket puls (% af max)', 'number',
+            values.percent || 70, 1, 100, 1, 'percent'));
+        } else {
+          fields.appendChild(makeField('Belastning (W)', 'number',
+            values.power || 60, 25, 400, 5, 'power'));
+        }
+        if (type !== 'repeat') {
+          fields.appendChild(makeField('Varighed (min)', 'number',
+            values.minutes || (type === 'interval' ? 5 : 2), 0.5, 720, 0.5, 'minutes'));
+        }
+        row.appendChild(fields);
+
+        var actions = document.createElement('div');
+        actions.className = 'actions';
+        [
+          ['Flyt op', -1],
+          ['Flyt ned', 1]
+        ].forEach(function (item) {
+          var move = document.createElement('button');
+          move.type = 'button';
+          move.textContent = item[0];
+          move.addEventListener('click', function () {
+            var sibling = item[1] < 0 ? row.previousElementSibling : row.nextElementSibling;
+            if (!sibling) return;
+            if (item[1] < 0) blocks.insertBefore(row, sibling);
+            else blocks.insertBefore(sibling, row);
+            updateSummary();
+          });
+          actions.appendChild(move);
+        });
+
+        var remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = 'Fjern';
+        remove.addEventListener('click', function () {
+          blocks.removeChild(row);
+          updateSummary();
+        });
+        actions.appendChild(remove);
+        row.appendChild(actions);
+
+        row.addEventListener('input', function () {
+          updateSummary();
+          scheduleLiveUpdate(false);
+        });
+        blocks.appendChild(row);
+        blocks.classList.toggle('has-blocks', blocks.children.length > 0);
+        updateSummary();
+      }
+
+      function workoutModified() {
+        return Boolean(workoutName) && JSON.stringify(readBlocks()) !== loadedBlocksSignature;
+      }
+
+      function workoutLabel() {
+        if (!workoutName) return 'Ny træning';
+        return workoutName + (workoutModified() ? ' (ændret)' : '');
+      }
+
+      function setWorkoutName(name) {
+        workoutName = name || null;
+        loadedBlocksSignature = workoutName ? JSON.stringify(readBlocks()) : null;
+        updateWorkoutName();
+      }
+
+      function updateWorkoutName() {
+        var chart = latestChart;
+        var running = chart && chart.active && chart.mode !== 'preview' && chart.plan;
+        workoutNameState.className = 'muted';
+        if (running) {
+          workoutNameElement.textContent = chart.plan.name || 'Ny træning';
+          workoutNameState.textContent = chart.mode === 'demo' ? 'Livedemo' : 'Kører';
+          workoutNameState.className = 'running';
+        } else if (workoutName) {
+          workoutNameElement.textContent = workoutName;
+          workoutNameState.textContent = workoutModified() ? 'Ændret, ikke gemt' : '';
+        } else {
+          workoutNameElement.textContent = blocks.children.length ? 'Ny træning' : 'Ingen træning valgt';
+          workoutNameState.textContent = blocks.children.length ? 'Ikke gemt' : '';
+        }
+      }
+
+      function getPlan() {
+        var useBirthYear = maxPulseSource() === 'birth_year';
+        var pulseSource = document.querySelector('input[name="pulse-source"]:checked').value;
+        return {
+          name: workoutLabel(),
+          max_pulse_source: useBirthYear ? 'age' : 'manual',
+          max_pulse: useBirthYear ? null : parseInt(maxPulse.value, 10),
+          age: useBirthYear ? selectedAge() : null,
+          pulse_source: pulseSource,
+          heart_rate_address: pulseSource === 'watch' ? watchDevice.value : null,
+          device: document.getElementById('device').value,
+          device_type: selectedDeviceType().id,
+          blocks: readBlocks()
+        };
+      }
+
+      function readBlocks() {
+        var rows = blocks.querySelectorAll('.block');
+        var items = [];
+        Array.prototype.forEach.call(rows, function (row) {
+          var item = {type: row.dataset.type};
+          if (row.dataset.label) item.label = row.dataset.label;
+          if (item.type === 'repeat') {
+            item.count = parseInt(row.querySelector('.count').value, 10);
+            item.work_seconds = parseInt(row.querySelector('.work-seconds').value, 10);
+            item.work_percent = parseInt(row.querySelector('.work-percent').value, 10);
+            item.recovery_seconds = parseInt(row.querySelector('.recovery-seconds').value, 10);
+            item.recovery_percent = parseInt(row.querySelector('.recovery-percent').value, 10);
+          } else {
+            item.minutes = parseFloat(row.querySelector('.minutes').value);
+          }
+          if (item.type === 'interval') {
+            item.percent = parseInt(row.querySelector('.percent').value, 10);
+          } else if (item.type === 'break') {
+            item.power = parseInt(row.querySelector('.power').value, 10);
+          }
+          items.push(item);
+        });
+        return items;
+      }
+
+      function updatePresetOptions(presets) {
+        savedPresets.textContent = '';
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Vælg opsætning';
+        savedPresets.appendChild(placeholder);
+        presets.forEach(function (preset) {
+          var option = document.createElement('option');
+          option.value = preset.name;
+          option.textContent = preset.name;
+          savedPresets.appendChild(option);
+        });
+      }
+
+      function renderProfiles(profiles, selectedName) {
+        profilesByName = {};
+        userProfile.textContent = '';
+        profiles.forEach(function (profile) {
+          profilesByName[profile.name] = profile;
+          var option = document.createElement('option');
+          option.value = profile.name;
+          option.textContent = profile.name;
+          userProfile.appendChild(option);
+        });
+        if (!profiles.length) throw new Error('Opret en brugerprofil for at fortsætte.');
+        activeProfile = profilesByName[selectedName] ? selectedName : profiles[0].name;
+        userProfile.value = activeProfile;
+        rememberProfile(activeProfile);
+        applyProfileWatch();
+        applyProfileMaxPulse();
+      }
+
+      function applyProfileWatch() {
+        var profile = profilesByName[activeProfile];
+        var watch = profile && profile.watch;
+        removeWatchButton.hidden = !watch;
+        var source = document.querySelector(
+          'input[name="pulse-source"][value="' + (watch ? 'watch' : 'ergometer') + '"]'
+        );
+        if (!source.checked) {
+          source.checked = true;
+          source.dispatchEvent(new Event('change'));
+        }
+        watchDevice.textContent = '';
+        var option = document.createElement('option');
+        option.value = '';
+        option.textContent = watch ? 'Brug gemt smartwatch' : 'Søg efter enheder først';
+        watchDevice.appendChild(option);
+        if (watch) {
+          var savedOption = document.createElement('option');
+          savedOption.value = watch.address;
+          savedOption.textContent = watch.name + ' · gemt for ' + activeProfile +
+            ' (' + watch.address + ')';
+          savedOption.dataset.name = watch.name;
+          watchDevice.appendChild(savedOption);
+          watchDevice.value = watch.address;
+          watchStatus.className = 'muted';
+          watchStatus.textContent = 'Gemt smartwatch: ' + watch.name +
+            '. Appen prøver at forbinde direkte ved træningsstart; søg kun igen, hvis forbindelsen fejler.';
+        } else {
+          watchStatus.className = 'muted';
+          watchStatus.textContent = 'Søg efter og vælg dit smartwatch. Valget gemmes på denne brugerprofil.';
+        }
+      }
+
+      function initializeProfiles() {
+        return fetch('/api/profiles').then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke hente brugerprofiler');
+            var savedName = null;
+            try {
+              savedName = window.localStorage.getItem('pyergometer-profile');
+            } catch (error) {
+              status.className = 'error';
+              status.textContent = 'Browseren kunne ikke hente senest brugte brugerprofil.';
+            }
+            renderProfiles(data.profiles, savedName);
+            return data.profiles;
+          });
+        });
+      }
+
+      function loadPresetList() {
+        if (!activeProfile) return Promise.resolve([]);
+        return fetch('/api/presets?profile=' + encodeURIComponent(activeProfile)).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke hente gemte opsætninger');
+            updatePresetOptions(data.presets);
+            return data.presets;
+          });
+        });
+      }
+
+      function applyPreset(preset) {
+        blocks.textContent = '';
+        blocks.classList.remove('has-blocks');
+        preset.plan.blocks.forEach(function (block) {
+          addBlock(block.type, block);
+        });
+        presetName.value = preset.name;
+        setWorkoutName(preset.name);
+        updateMaxPulseResult();
+        updateSummary();
+      }
+
+      userProfile.addEventListener('change', function () {
+        activeProfile = userProfile.value;
+        rememberProfile(activeProfile);
+        applyProfileWatch();
+        applyProfileMaxPulse();
+        resetChart().then(function () {
+          resetFormForProfile();
+          return loadPresetList();
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      });
+
+      document.getElementById('create-profile').addEventListener('click', function () {
+        var name = newProfileName.value.trim();
+        if (!name) {
+          status.className = 'error';
+          status.textContent = 'Skriv et navn til den nye brugerprofil.';
+          newProfileName.focus();
+          return;
+        }
+        fetch('/api/profiles', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: 'create', name: name})
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke oprette brugerprofil');
+            return data.profiles;
+          });
+        }).then(function (profiles) {
+          renderProfiles(profiles, name);
+          newProfileName.value = '';
+          resetFormForProfile();
+          return resetChart().then(loadPresetList);
+        }).then(function () {
+          status.className = 'success';
+          status.textContent = 'Brugerprofilen blev oprettet. Gemte træningsopsætninger deles ikke mellem profiler.';
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      });
+
+      removeWatchButton.addEventListener('click', function () {
+        var profileName = activeProfile;
+        if (!profileName) return;
+        fetch('/api/profiles', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: 'remove-watch', profile: profileName})
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke fjerne smartwatch');
+            return data.profiles;
+          });
+        }).then(function (profiles) {
+          renderProfiles(profiles, profileName);
+          flashSaved(watchSaved, 'Smartwatch fjernet fra ' + profileName);
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      });
+
+      watchDevice.addEventListener('change', function () {
+        var option = watchDevice.options[watchDevice.selectedIndex];
+        if (!watchDevice.value || !option.dataset.name || !activeProfile) return;
+        fetch('/api/profiles', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            action: 'save-watch',
+            profile: activeProfile,
+            watch: {name: option.dataset.name, address: watchDevice.value}
+          })
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme smartwatch');
+            return data.profiles;
+          });
+        }).then(function (profiles) {
+          renderProfiles(profiles, activeProfile);
+          flashSaved(watchSaved, 'Smartwatch gemt på ' + activeProfile);
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      });
+
+      document.getElementById('save-preset').addEventListener('click', function () {
+        status.className = '';
+        status.textContent = '';
+        if (!presetName.value.trim()) {
+          status.className = 'error';
+          status.textContent = 'Skriv et navn til træningsopsætningen.';
+          presetName.focus();
+          return;
+        }
+        var plan = getPlan();
+        if (!plan.blocks.length) {
+          status.className = 'error';
+          status.textContent = 'Tilføj mindst ét træningselement.';
+          return;
+        }
+        var inputs = blocks.querySelectorAll('input');
+        for (var index = 0; index < inputs.length; index += 1) {
+          if (!inputs[index].checkValidity()) {
+            inputs[index].reportValidity();
+            return;
+          }
+        }
+        fetch('/api/presets', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            profile: activeProfile,
+            name: presetName.value,
+            plan: {blocks: plan.blocks}
+          })
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme opsætningen');
+            updatePresetOptions(data.presets);
+            savedPresets.value = presetName.value.trim();
+            setWorkoutName(presetName.value.trim());
+            status.className = 'success';
+            status.textContent = 'Træningsopsætningen blev gemt lokalt.';
+          });
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      });
+
+      document.getElementById('load-preset').addEventListener('click', function () {
+        status.className = '';
+        status.textContent = '';
+        if (!savedPresets.value) {
+          status.className = 'error';
+          status.textContent = 'Vælg først en gemt træningsopsætning.';
+          return;
+        }
+        var selectedName = savedPresets.value;
+        loadPresetList().then(function (presets) {
+          var preset = presets.filter(function (item) {
+            return item.name === selectedName;
+          })[0];
+          if (!preset) throw new Error('Den gemte opsætning blev ikke fundet.');
+          applyPreset(preset);
+          status.className = 'success';
+          status.textContent = 'Træningsopsætningen blev indlæst.';
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      });
+
+      document.getElementById('start-demo').addEventListener('click', function () {
+        status.className = '';
+        status.textContent = '';
+        var plan = getPlan();
+        if (!requireMaxPulse()) return;
+        if (!plan.blocks.length) {
+          status.className = 'error';
+          status.textContent = 'Tilføj mindst ét træningselement før livedemo.';
+          return;
+        }
+        fetch('/api/demo', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(plan)
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke starte livedemo');
+            return data;
+          });
+        }).then(function () {
+          status.className = 'success';
+          status.textContent = 'Livedemo startet. Ingen ergometer tilsluttes.';
+          pollChart();
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      });
+
+      function refreshStatus() {
+        fetch('/api/status').then(function (response) {
+          return response.json();
+        }).then(function (data) {
+          busy = data.running;
+          stopping = data.stopping;
+          canStop = data.can_stop === true;
+          startButton.disabled = stopping || (busy && !canStop);
+          startButton.textContent = stopping ? 'Stopper træning…'
+            : busy ? canStop ? 'Stop træning' : 'Stop kræver genstart'
+              : 'Start træning';
+          startButton.classList.toggle('danger', busy && canStop);
+          startButton.classList.toggle('primary', !busy);
+          document.querySelectorAll('input[name="pulse-source"]').forEach(function (radio) {
+            radio.disabled = busy;
+          });
+          document.getElementById('scan-watches').disabled = busy;
+          watchDevice.disabled = busy;
+          removeWatchButton.disabled = busy;
+          userProfile.disabled = busy;
+          maxPulse.disabled = busy || maxPulseSource() === 'birth_year';
+          birthYearInput.disabled = busy || maxPulseSource() !== 'birth_year';
+          document.querySelectorAll('input[name="max-pulse-source"]').forEach(function (radio) {
+            radio.disabled = busy;
+          });
+          newProfileName.disabled = busy;
+          document.getElementById('create-profile').disabled = busy;
+          if (data.heart_rate) {
+            if (data.heart_rate.fresh) {
+              watchStatus.className = 'success';
+              watchStatus.textContent = 'Smartwatch tilsluttet · ' +
+                data.heart_rate.pulse + ' bpm';
+            } else {
+              watchStatus.className = 'error';
+              watchStatus.textContent = data.heart_rate.error +
+                (busy ? '. Belastningen fastholdes, indtil pulsmålingen kommer tilbage.' : '');
+            }
+          }
+          if (busy) {
+            if (stopping) {
+              status.className = '';
+              status.textContent = 'Træningen stoppes. Belastningen sættes ned til 25 W.';
+            } else if (!canStop) {
+              status.className = 'muted';
+              status.textContent = 'Stop kræver den opdaterede server. Den aktive træning fortsætter uændret; genstart først, når træningen er afsluttet.';
+            } else if (data.heart_rate && !data.heart_rate.fresh) {
+              status.className = 'error';
+              status.textContent = 'Fejl med Bluetooth-forbindelsen til uret. ' +
+                'Den aktuelle belastning fastholdes.';
+            } else {
+              status.className = '';
+              status.textContent = 'Træningen kører. Loggen gemmes, når den er færdig.';
+            }
+          } else if (data.error) {
+            status.className = 'error';
+            status.textContent = data.error;
+          } else if (data.exit_code === 0) {
+            status.className = 'success';
+            status.textContent = 'Træningen er færdig. Logfil: data/' + data.log;
+          } else if (data.exit_code !== null) {
+            status.className = 'error';
+            status.textContent = 'Træningen stoppede med fejlkode ' + data.exit_code +
+              '. Se pyergometer-terminalen for fejlbeskeden.';
+          }
+        }).catch(function () {
+          status.className = 'error';
+          status.textContent = 'Forbindelsen til den lokale pyergometer-side blev afbrudt.';
+        });
+      }
+
+      document.getElementById('add-interval').addEventListener('click', function () {
+        addBlock('interval');
+      });
+      document.getElementById('add-break').addEventListener('click', function () {
+        addBlock('break');
+      });
+      document.getElementById('add-repeat').addEventListener('click', function () {
+        addBlock('repeat');
+      });
+      document.getElementById('apply-template').addEventListener('click', function () {
+        var templates = {
+          'hiit-30-30': [
+            {type: 'interval', label: 'Opvarmning', minutes: 4, percent: 55},
+            {
+              type: 'repeat',
+              label: 'Gentagne høj-/lavintensitetsintervaller',
+              count: 13,
+              work_seconds: 30,
+              work_percent: 85,
+              recovery_seconds: 30,
+              recovery_percent: 60
+            },
+            {type: 'break', label: 'Nedkøling', minutes: 3, power: 25}
+          ]
+        };
+        var selectedTemplate = templates[builtinTemplate.value];
+        if (!selectedTemplate) {
+          status.className = 'error';
+          status.textContent = 'Vælg først en fælles træningsskabelon.';
+          return;
+        }
+        blocks.textContent = '';
+        blocks.classList.remove('has-blocks');
+        selectedTemplate.forEach(function (block) {
+          addBlock(block.type, block);
+        });
+        presetName.value = '';
+        setWorkoutName(builtinTemplate.options[builtinTemplate.selectedIndex].textContent);
+        status.className = 'success';
+        status.textContent = 'HIIT-skabelonen er klar: 4 min opvarmning, 13 × 30/30 sek. og 3 min nedkøling. Du kan starte den uden at gemme.';
+        resetChart().catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      });
+      maxPulse.addEventListener('change', function () {
+        updateMaxPulseResult();
+        updateSummary();
+        saveProfileMaxPulse();
+      });
+      birthYearInput.addEventListener('input', function () {
+        updateMaxPulseResult();
+        updateSummary();
+      });
+      birthYearInput.addEventListener('change', saveProfileMaxPulse);
+      Array.prototype.forEach.call(
+        document.querySelectorAll('input[name="max-pulse-source"]'),
+        function (radio) {
+          radio.addEventListener('change', function () {
+            updateMaxPulseSource();
+            saveProfileMaxPulse();
+          });
+        }
+      );
+      updateMaxPulseSource();
+      deviceTypeSelect.addEventListener('change', function () {
+        document.getElementById('device-label').hidden = !selectedDeviceType().needs_port;
+      });
+      deviceTypeSelect.dispatchEvent(new Event('change'));
+      Array.prototype.forEach.call(
+        document.querySelectorAll('input[name="pulse-source"]'),
+        function (radio) {
+          radio.addEventListener('change', function () {
+            var useWatch = document.querySelector(
+              'input[name="pulse-source"]:checked').value === 'watch';
+            watchSettings.hidden = !useWatch;
+          });
+        }
+      );
+      document.querySelector('input[name="pulse-source"][value="ergometer"]').dispatchEvent(
+        new Event('change')
+      );
+      document.getElementById('scan-watches').addEventListener('click', function () {
+        watchStatus.className = 'muted';
+        watchStatus.textContent = 'Søger efter Bluetooth-enheder...';
+        fetch('/api/heart-rate/scan', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke søge efter ure');
+            return data.devices;
+          });
+        }).then(function (devices) {
+          watchDevice.textContent = '';
+          var placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = devices.length
+            ? 'Vælg smartwatch'
+            : 'Ingen Bluetooth-enheder fundet';
+          watchDevice.appendChild(placeholder);
+          devices.forEach(function (device) {
+            var option = document.createElement('option');
+            option.value = device.address;
+            option.dataset.name = device.name;
+            option.textContent = device.name +
+              (device.heart_rate_service ? ' · Bluetooth-puls' : '') +
+              (device.rssi === null ? '' : ' · ' + device.rssi + ' dBm') +
+              ' (' + device.address + ')';
+            watchDevice.appendChild(option);
+          });
+          var savedWatch = profilesByName[activeProfile] &&
+            profilesByName[activeProfile].watch;
+          if (savedWatch && !devices.some(function (device) {
+            return device.address === savedWatch.address;
+          })) {
+            var savedOption = document.createElement('option');
+            savedOption.value = savedWatch.address;
+            savedOption.dataset.name = savedWatch.name;
+            savedOption.textContent = savedWatch.name + ' · gemt (' + savedWatch.address + ')';
+            watchDevice.appendChild(savedOption);
+          }
+          if (savedWatch) watchDevice.value = savedWatch.address;
+          watchStatus.className = devices.length ? 'muted' : 'error';
+          watchStatus.textContent = devices.length
+            ? 'Vælg uret. Valget gemmes på profilen; næste gang forsøger appen at forbinde direkte.'
+            : savedWatch
+              ? 'Uret blev ikke fundet lige nu. Appen beholder den gemte enhed; kontrollér urets Bluetooth-pulsdeling.'
+              : 'Kontrollér, at urets Bluetooth-pulsdeling er slået til.';
+        }).catch(function (error) {
+          watchStatus.className = 'error';
+          watchStatus.textContent = error.message;
+        });
+      });
+
+      startButton.addEventListener('click', function () {
+        if (busy) {
+          if (stopping) return;
+          stopping = true;
+          startButton.disabled = true;
+          startButton.textContent = 'Stopper træning…';
+          status.className = '';
+          status.textContent = 'Sender stopkommando til ergometeret…';
+          fetch('/api/stop', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+          }).then(function (response) {
+            return response.json().then(function (data) {
+              if (!response.ok) throw new Error(data.error || 'Kunne ikke stoppe træningen');
+              return data;
+            });
+          }).then(function () {
+            status.textContent = 'Stopkommando sendt. Belastningen sættes ned til 25 W.';
+            refreshStatus();
+          }).catch(function (error) {
+            stopping = false;
+            startButton.disabled = false;
+            startButton.textContent = 'Stop træning';
+            status.className = 'error';
+            status.textContent = error.message;
+          });
+          return;
+        }
+
+        status.className = '';
+        status.textContent = '';
+        var plan = getPlan();
+        if (plan.pulse_source === 'watch' && !plan.heart_rate_address) {
+          status.className = 'error';
+          status.textContent = 'Søg efter og vælg dit smartwatch først.';
+          return;
+        }
+        if (!requireMaxPulse()) return;
+        if (!plan.blocks.length) {
+          status.className = 'error';
+          status.textContent = 'Tilføj mindst ét træningselement.';
+          return;
+        }
+        var inputs = blocks.querySelectorAll('input');
+        for (var index = 0; index < inputs.length; index += 1) {
+          if (!inputs[index].checkValidity()) {
+            inputs[index].reportValidity();
+            return;
+          }
+        }
+        if (selectedDeviceType().needs_port && !plan.device.trim()) {
+          status.className = 'error';
+          status.textContent = 'Angiv ergometerets serielle port.';
+          return;
+        }
+        busy = true;
+        startButton.disabled = true;
+        if (plan.pulse_source === 'watch') {
+          watchStatus.className = 'muted';
+          watchStatus.textContent = 'Forbinder til uret og venter på en pulsmåling...';
+          status.textContent = 'Forbinder til smartwatch. Hold Bluetooth-pulsdeling aktiv på uret.';
+        }
+        fetch('/api/start', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(plan)
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke starte træningen');
+            return data;
+          });
+        }).then(function () {
+          status.className = '';
+          status.textContent = 'Træningen er startet.';
+          startButton.textContent = 'Stop træning';
+          startButton.classList.remove('primary');
+          startButton.classList.add('danger');
+          refreshStatus();
+        }).catch(function (error) {
+          busy = false;
+          stopping = false;
+          startButton.disabled = false;
+          startButton.textContent = 'Start træning';
+          startButton.classList.remove('danger');
+          startButton.classList.add('primary');
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      });
+
+      addBlock('interval');
+      initializeProfiles().then(function () {
+        return loadPresetList();
+      }).catch(function (error) {
+        status.className = 'error';
+        status.textContent = error.message;
+      });
+      window.setInterval(refreshStatus, 2000);
+      window.setInterval(pollChart, 1000);
+      refreshStatus();
+      pollChart();
+    }());
+  </script>
+  <script>
+    (function () {
+      var settingsPanel = document.getElementById('settings-panel');
+      var profilePanel = document.getElementById('profile-panel');
+      var planPanel = document.getElementById('plan-panel');
+      var settingsHint = document.getElementById('settings-hint');
+      var profileHint = document.getElementById('profile-hint');
+      var maxPulseResult = document.getElementById('max-pulse-result');
+      var blocks = document.getElementById('blocks');
+      var autoOpened = false;
+
+      function updateHints() {
+        var source = document.querySelector('input[name="pulse-source"]:checked');
+        var typeSelect = document.getElementById('device-type');
+        var typeLabel = typeSelect.options.length
+          ? typeSelect.options[typeSelect.selectedIndex].textContent : '';
+        var needsPort = !document.getElementById('device-label').hidden;
+        var device = document.getElementById('device').value.trim();
+        profileHint.textContent = maxPulseResult.textContent +
+          ' · ' + (source && source.value === 'watch' ? 'Smartwatch' : 'Ergometer-puls');
+        settingsHint.textContent = typeLabel +
+          (needsPort ? ' · ' + (device || 'ingen seriel port valgt') : '');
+      }
+
+      // Show the panels that still need input the first time the page has loaded its profile.
+      function openWhatIsMissing() {
+        if (autoOpened) return;
+        autoOpened = true;
+        if (!/\d/.test(maxPulseResult.textContent)) profilePanel.open = true;
+        if (!blocks.children.length) planPanel.open = true;
+      }
+
+      [settingsPanel, profilePanel].forEach(function (panel) {
+        panel.addEventListener('change', updateHints);
+        panel.addEventListener('input', updateHints);
+      });
+      // Profile and preset loads change the fields from script without firing events.
+      setInterval(updateHints, 1000);
+      setTimeout(openWhatIsMissing, 1500);
+      updateHints();
+    }());
+  </script>
+</body>
+</html>
