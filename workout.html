@@ -2134,10 +2134,25 @@
         });
       });
 
+      // Consecutive failed status polls; a single miss (e.g. a server restart) is ignored.
+      var statusFailures = 0;
+      var DISCONNECTED_TEXT = 'Mistede forbindelsen til pyergometer-serveren. Prøver igen …';
+
       function refreshStatus() {
         fetch('/api/status').then(function (response) {
           return response.json();
         }).then(function (data) {
+          if (statusFailures >= 2 && status.textContent === DISCONNECTED_TEXT) {
+            status.className = 'success';
+            status.textContent = 'Forbindelsen er genoprettet.';
+            window.setTimeout(function () {
+              if (status.textContent === 'Forbindelsen er genoprettet.') {
+                status.className = '';
+                status.textContent = '';
+              }
+            }, 4000);
+          }
+          statusFailures = 0;
           busy = data.running;
           stopping = data.stopping;
           canStop = data.can_stop === true;
@@ -2206,8 +2221,11 @@
               '. Se pyergometer-terminalen for fejlbeskeden.';
           }
         }).catch(function () {
-          status.className = 'error';
-          status.textContent = 'Forbindelsen til den lokale pyergometer-side blev afbrudt.';
+          statusFailures += 1;
+          if (statusFailures >= 2) {
+            status.className = 'error';
+            status.textContent = DISCONNECTED_TEXT;
+          }
         });
       }
 
