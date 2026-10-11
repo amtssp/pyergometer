@@ -19,8 +19,10 @@ except ImportError:
 
 try:
     from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+    from SocketServer import ThreadingMixIn
 except ImportError:
     from http.server import BaseHTTPRequestHandler, HTTPServer
+    from socketserver import ThreadingMixIn
 
 
 MAX_REQUEST_SIZE = 65536
@@ -547,10 +549,18 @@ def local_network_addresses():
     return hosts
 
 
-class WorkoutServer(HTTPServer):
+class WorkoutServer(ThreadingMixIn, HTTPServer):
+    # Each request gets its own thread, so a phone polling the page is not kept
+    # waiting while another device scans for watches. Requests that read or change
+    # the server state still take turns through ``lock``.
+    daemon_threads = True
+
     def __init__(self, address, device=None, simulate=False, device_type=None,
                  bike_settings_file=None):
         HTTPServer.__init__(self, address, WorkoutRequestHandler)
+        self.lock = threading.RLock()
+        # True while a start waits for the first watch pulse without holding the lock.
+        self.starting = False
         self.bind_host = address[0]
         self.bike_settings_file = bike_settings_file or os.path.join(
             os.path.dirname(os.path.abspath(__file__)), 'bike_settings.json')
@@ -748,6 +758,18 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             })
 
     def do_GET(self):
+        with self.server.lock:
+            self._handle_get()
+
+    def do_POST(self):
+        if urlparse(self.path).path == '/api/heart-rate/scan':
+            # A scan takes several seconds and touches no server state.
+            self._handle_post()
+            return
+        with self.server.lock:
+            self._handle_post()
+
+    def _handle_get(self):
         request_url = urlparse(self.path)
         request_path = request_url.path
         if request_path == '/':
@@ -812,7 +834,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
 
         self._send_json(404, {'error': 'Not found'})
 
-    def do_POST(self):
+    def _handle_post(self):
         request_path = urlparse(self.path).path
         if request_path not in ('/api/start', '/api/presets', '/api/profiles',
                                 '/api/chart/reset',
@@ -956,7 +978,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {'error': str(error)})
                 return
             self.server.refresh_process()
-            if self.server.process is not None:
+            if self.server.process is not None or self.server.starting:
                 self._send_json(409, {'error': 'A workout is already running'})
                 return
             self.server.start_demo(request)
@@ -998,7 +1020,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             return
 
         self.server.refresh_process()
-        if self.server.process is not None:
+        if self.server.process is not None or self.server.starting:
             self._send_json(409, {'error': 'A workout is already running'})
             return
 
@@ -1117,7 +1139,15 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 os.remove(heart_rate_path)
                 self._send_json(500, {'error': 'Could not start Bluetooth monitor: %s' % error})
                 return
-            if not monitor.wait_for_sample(15):
+            # Waiting for the watch can take 15 seconds; let other requests run meanwhile.
+            self.server.starting = True
+            self.server.lock.release()
+            try:
+                watch_ready = monitor.wait_for_sample(15)
+            finally:
+                self.server.lock.acquire()
+                self.server.starting = False
+            if not watch_ready:
                 # Read the reason before stopping; terminating the monitor would mask it as an exit code.
                 watch_error = monitor.status()['error']
                 monitor.stop()

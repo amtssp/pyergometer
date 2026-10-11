@@ -764,6 +764,52 @@ class BikeSettingsTests(unittest.TestCase):
         self.assertEqual(read_bike_settings(self.path), {'device_type': 'kettler', 'device': 'COM7'})
 
 
+class ConcurrentRequestTests(unittest.TestCase):
+    def test_a_slow_watch_scan_does_not_block_other_devices(self):
+        import time
+        import workout
+
+        def slow_scan():
+            time.sleep(2)
+            return []
+
+        original_scan = workout.scan_heart_rate_devices
+        workout.scan_heart_rate_devices = slow_scan
+        self.addCleanup(setattr, workout, 'scan_heart_rate_devices', original_scan)
+        server = WorkoutServer(('127.0.0.1', 0), simulate=True)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+
+        def stop():
+            server.shutdown()
+            thread.join()
+            server.server_close()
+        self.addCleanup(stop)
+
+        def scan():
+            connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=10)
+            connection.request('POST', '/api/heart-rate/scan', body='{}', headers={
+                'Content-Type': 'application/json',
+                'Origin': 'http://127.0.0.1:%d' % server.server_port})
+            connection.getresponse().read()
+            connection.close()
+
+        scanner = threading.Thread(target=scan)
+        scanner.start()
+        time.sleep(0.3)
+        started = time.monotonic()
+        connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=10)
+        connection.request('GET', '/api/status')
+        status = connection.getresponse().status
+        connection.close()
+        waited = time.monotonic() - started
+        scanner.join()
+
+        self.assertEqual(status, 200)
+        self.assertLess(waited, 1.0)
+
+
 class NetworkOriginTests(unittest.TestCase):
     def start_server(self, host):
         server = WorkoutServer((host, 0))
