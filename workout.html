@@ -493,6 +493,10 @@
           <input id="device" type="text" placeholder="/dev/ttyUSB0 eller COM3">
         </label>
       </div>
+      <div class="saved-row">
+        <p class="muted">Gemmes på denne maskine og bruges, hver gang serveren starter.</p>
+        <span id="bike-saved" class="saved-tick" role="status"></span>
+      </div>
     </div>
   </details>
 
@@ -1718,6 +1722,8 @@
           document.getElementById('scan-watches').disabled = busy;
           watchDevice.disabled = busy;
           removeWatchButton.disabled = busy;
+          deviceTypeSelect.disabled = busy;
+          document.getElementById('device').disabled = busy;
           userProfile.disabled = busy;
           maxPulse.disabled = busy || maxPulseSource() === 'birth_year';
           birthYearInput.disabled = busy || maxPulseSource() !== 'birth_year';
@@ -1838,6 +1844,28 @@
         document.getElementById('device-label').hidden = !selectedDeviceType().needs_port;
       });
       deviceTypeSelect.dispatchEvent(new Event('change'));
+
+      function saveBikeSettings() {
+        fetch('/api/bike-settings', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            device_type: selectedDeviceType().id,
+            device: document.getElementById('device').value
+          })
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme cyklens indstillinger');
+          });
+        }).then(function () {
+          flashSaved(document.getElementById('bike-saved'), 'Gemt');
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
+      }
+      deviceTypeSelect.addEventListener('change', saveBikeSettings);
+      document.getElementById('device').addEventListener('change', saveBikeSettings);
       Array.prototype.forEach.call(
         document.querySelectorAll('input[name="pulse-source"]'),
         function (radio) {

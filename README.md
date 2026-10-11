@@ -102,7 +102,9 @@ to ``data/`` with Windows-compatible timestamped filenames.
 Supported bikes are listed in ``devices.py``: currently a Kettler on a serial
 RS-232 port and a simulation. Choose the bike type on the page under the bike
 settings, or pass ``--device-type`` on the command line (``--simulate`` is short
-for ``--device-type simulator``). To add another bike, write a driver class with
+for ``--device-type simulator``). The bike type and serial port chosen on the
+page are saved in the Git-ignored ``bike_settings.json`` and used every time
+the server starts; command-line options override them. To add another bike, write a driver class with
 the ``ErgometerDevice`` interface (``status()``, ``set_power()`` and the
 ``pulse``, ``rpm`` and ``power`` values) and add it to ``DEVICE_TYPES``; the
 pulse control, chart and logs then work unchanged.

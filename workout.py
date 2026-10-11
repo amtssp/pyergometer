@@ -10,7 +10,7 @@ import threading
 import webbrowser
 import xml.etree.ElementTree as ET
 from bleheartrate import HeartRateMonitor, scan_heart_rate_devices
-from devices import DEFAULT_DEVICE_TYPE, device_type, public_device_types
+from devices import DEFAULT_DEVICE_TYPE, device_type, device_type_ids, public_device_types
 try:
     from urllib.parse import parse_qs, urlparse
 except ImportError:
@@ -250,6 +250,48 @@ def write_profiles(path, profiles):
         raise
 
 
+def normalize_bike_settings(settings):
+    """Validate the bike type and serial port chosen on the page."""
+    if not isinstance(settings, dict):
+        raise ValueError('Bike settings must be an object')
+    type_id = settings.get('device_type')
+    if type_id not in device_type_ids():
+        raise ValueError('Unknown ergometer type: %s' % type_id)
+    device = settings.get('device', '')
+    if not isinstance(device, text_types) or len(device) > 128:
+        raise ValueError('Serial device must be text of at most 128 characters')
+    return {'device_type': type_id, 'device': device.strip()}
+
+
+def read_bike_settings(path):
+    """Return the saved bike settings, or None when nothing usable is saved."""
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, 'rb') as settings_file:
+            return normalize_bike_settings(json.loads(settings_file.read().decode('utf-8')))
+    except (IOError, ValueError, TypeError) as error:
+        sys.stderr.write('Ignoring saved bike settings: %s\n' % error)
+        return None
+
+
+def write_bike_settings(path, settings):
+    settings = normalize_bike_settings(settings)
+    directory = os.path.dirname(os.path.abspath(path))
+    temporary = tempfile.NamedTemporaryFile(
+        mode='wb', prefix='bike-settings-', suffix='.tmp', dir=directory, delete=False)
+    try:
+        temporary.write(json.dumps(settings, indent=2).encode('utf-8'))
+        temporary.close()
+        os.replace(temporary.name, path)
+    except Exception:
+        temporary.close()
+        if os.path.exists(temporary.name):
+            os.remove(temporary.name)
+        raise
+    return settings
+
+
 def create_profile(path, legacy_presets_path, name):
     name = _profile_name(name)
     profiles = read_profiles(path, legacy_presets_path)
@@ -479,12 +521,18 @@ def local_network_addresses():
 
 
 class WorkoutServer(HTTPServer):
-    def __init__(self, address, device=None, simulate=False, device_type=None):
+    def __init__(self, address, device=None, simulate=False, device_type=None,
+                 bike_settings_file=None):
         HTTPServer.__init__(self, address, WorkoutRequestHandler)
         self.bind_host = address[0]
-        self.device = device or ''
+        self.bike_settings_file = bike_settings_file or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'bike_settings.json')
+        # Command-line options win; otherwise use what was last chosen on the page.
+        saved = read_bike_settings(self.bike_settings_file) or {}
+        self.device = device or saved.get('device', '')
         self.simulate = bool(simulate)
-        self.device_type = 'simulator' if simulate else (device_type or DEFAULT_DEVICE_TYPE)
+        self.device_type = 'simulator' if simulate else (
+            device_type or saved.get('device_type') or DEFAULT_DEVICE_TYPE)
         self.process = None
         self.stop_requested = False
         self.session_file = None
@@ -730,7 +778,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         if request_path not in ('/api/start', '/api/presets', '/api/profiles',
                                 '/api/chart/reset',
                                 '/api/demo', '/api/update', '/api/stop',
-                                '/api/heart-rate/scan'):
+                                '/api/heart-rate/scan', '/api/bike-settings'):
             self._send_json(404, {'error': 'Not found'})
             return
 
@@ -803,6 +851,17 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {'error': 'Could not scan for Bluetooth devices: %s' % error})
                 return
             self._send_json(200, {'devices': devices})
+            return
+
+        if request_path == '/api/bike-settings':
+            try:
+                settings = write_bike_settings(self.server.bike_settings_file, request)
+            except (IOError, OSError, ValueError, TypeError) as error:
+                self._send_json(400, {'error': 'Could not save bike settings: %s' % error})
+                return
+            self.server.device_type = settings['device_type']
+            self.server.device = settings['device']
+            self._send_json(200, {'settings': settings})
             return
 
         if request_path == '/api/profiles':

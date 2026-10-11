@@ -22,7 +22,9 @@ from workout import (
     save_profile_preset,
     save_preset,
     update_profile_watch,
-    update_profile_max_pulse
+    update_profile_max_pulse,
+    read_bike_settings,
+    write_bike_settings
 )
 from liveplan import session_steps
 from bleheartrate import (
@@ -703,6 +705,61 @@ class DeviceDriverTests(unittest.TestCase):
         self.assertNotIn('@@', page)
         self.assertIn('"id": "kettler"', page)
         self.assertIn('deviceTypeSelect.value = "simulator";', page)
+
+
+class BikeSettingsTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.mkdtemp(prefix='pyergometer-bike-test-')
+        self.addCleanup(shutil.rmtree, self.directory)
+        self.path = os.path.join(self.directory, 'bike_settings.json')
+
+    def test_saved_settings_are_read_back(self):
+        write_bike_settings(self.path, {'device_type': 'kettler', 'device': ' COM4 '})
+
+        self.assertEqual(read_bike_settings(self.path),
+                         {'device_type': 'kettler', 'device': 'COM4'})
+
+    def test_missing_or_broken_settings_are_ignored(self):
+        self.assertIsNone(read_bike_settings(self.path))
+        with open(self.path, 'w') as settings_file:
+            settings_file.write('{"device_type": "peloton", "device": ""}')
+        self.assertIsNone(read_bike_settings(self.path))
+        with self.assertRaises(ValueError):
+            write_bike_settings(self.path, {'device_type': 'peloton', 'device': ''})
+
+    def test_server_starts_with_saved_settings_unless_overridden(self):
+        write_bike_settings(self.path, {'device_type': 'simulator', 'device': 'COM4'})
+
+        saved = WorkoutServer(('127.0.0.1', 0), bike_settings_file=self.path)
+        overridden = WorkoutServer(('127.0.0.1', 0), device='/dev/ttyUSB0',
+                                   device_type='kettler', bike_settings_file=self.path)
+        saved.server_close()
+        overridden.server_close()
+
+        self.assertEqual((saved.device_type, saved.device), ('simulator', 'COM4'))
+        self.assertEqual((overridden.device_type, overridden.device), ('kettler', '/dev/ttyUSB0'))
+
+    def test_page_choice_is_saved_through_the_api(self):
+        server = WorkoutServer(('127.0.0.1', 0), bike_settings_file=self.path)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+        try:
+            connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+            connection.request('POST', '/api/bike-settings',
+                               body=json.dumps({'device_type': 'kettler', 'device': 'COM7'}),
+                               headers={'Content-Type': 'application/json',
+                                        'Origin': 'http://127.0.0.1:%d' % server.server_port})
+            status = connection.getresponse().status
+            connection.close()
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+
+        self.assertEqual(status, 200)
+        self.assertEqual(server.device, 'COM7')
+        self.assertEqual(read_bike_settings(self.path), {'device_type': 'kettler', 'device': 'COM7'})
 
 
 class NetworkOriginTests(unittest.TestCase):

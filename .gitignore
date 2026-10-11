@@ -13,6 +13,7 @@ data/*.live.hr.json
 data/*.live.hr.json.status
 workouts.json
 user_profiles.json
+bike_settings.json
 data-test
 build/
 nohup.out

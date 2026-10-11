@@ -9,7 +9,7 @@ import time
 
 # On Windows a file cannot be opened while another process swaps it with os.replace,
 # so readers and the writer retry briefly instead of failing a whole control step.
-FILE_RETRY_ATTEMPTS = 10
+FILE_RETRY_ATTEMPTS = 50
 FILE_RETRY_DELAY = 0.02
 
 
