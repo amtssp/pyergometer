@@ -1,6 +1,8 @@
 pyergometer
 ===========
 
+![The workout page during a simulated watt-controlled VO₂ max session: planned load as orange bars, measured pulse as a red line, and the current pulse in the heart](docs/screenshot.png)
+
 This program connects to a Kettler ergometer (tested with model E3)
 through a serial connection and, following a user-specified program, controls the
 ergometer power setting to keep the subject's heart rate at a desired level (which
