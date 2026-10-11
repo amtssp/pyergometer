@@ -35,6 +35,8 @@ PULSE_LIMIT_PERCENT = 95
 # Seconds a start waits for the first watch pulse: finding and connecting the
 # watch takes up to about 15 seconds on a Raspberry Pi.
 WATCH_START_TIMEOUT = 30
+STARTING_MESSAGE = ('Træningen er ved at starte og venter på pulsen fra uret '
+                    '(op til %d sekunder).' % WATCH_START_TIMEOUT)
 BUILTIN_TEMPLATE_NAMES = ('Puls · HIIT 30/30 (13 gentagelser)', 'Watt · VO₂ Max 5 × 5',
                           'HIIT 30/30 (13 gentagelser)')
 
@@ -795,6 +797,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 if self.server.heart_rate_monitor else None
             self._send_json(200, {
                 'running': running,
+                'starting': self.server.starting,
                 'stopping': self.server.stop_requested,
                 'can_stop': True,
                 'exit_code': self.server.last_exit_code,
@@ -981,7 +984,10 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {'error': str(error)})
                 return
             self.server.refresh_process()
-            if self.server.process is not None or self.server.starting:
+            if self.server.starting:
+                self._send_json(409, {'error': STARTING_MESSAGE})
+                return
+            if self.server.process is not None:
                 self._send_json(409, {'error': 'A workout is already running'})
                 return
             self.server.start_demo(request)
@@ -1023,7 +1029,10 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             return
 
         self.server.refresh_process()
-        if self.server.process is not None or self.server.starting:
+        if self.server.starting:
+            self._send_json(409, {'error': STARTING_MESSAGE})
+            return
+        if self.server.process is not None:
             self._send_json(409, {'error': 'A workout is already running'})
             return
 
@@ -1142,14 +1151,18 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 os.remove(heart_rate_path)
                 self._send_json(500, {'error': 'Could not start Bluetooth monitor: %s' % error})
                 return
-            # Waiting for the watch can take 15 seconds; let other requests run meanwhile.
-            self.server.starting = True
-            self.server.lock.release()
-            try:
-                watch_ready = monitor.wait_for_sample(WATCH_START_TIMEOUT)
-            finally:
-                self.server.lock.acquire()
-                self.server.starting = False
+            # A watt workout follows its plan without a pulse, so it starts at once and
+            # the watch connects in the background. A pulse workout needs the pulse first.
+            watch_ready = True
+            if chart_plan['mode'] == 'pulse':
+                # Waiting for the watch can take 30 seconds; let other requests run meanwhile.
+                self.server.starting = True
+                self.server.lock.release()
+                try:
+                    watch_ready = monitor.wait_for_sample(WATCH_START_TIMEOUT)
+                finally:
+                    self.server.lock.acquire()
+                    self.server.starting = False
             if not watch_ready:
                 # Read the reason before stopping; terminating the monitor would mask it as an exit code.
                 watch_error = monitor.status()['error']

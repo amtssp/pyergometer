@@ -810,6 +810,111 @@ class ConcurrentRequestTests(unittest.TestCase):
         self.assertLess(waited, 1.0)
 
 
+class StartingStateTests(unittest.TestCase):
+    def test_a_start_waiting_for_the_watch_is_reported_and_blocks_another(self):
+        server = WorkoutServer(('127.0.0.1', 0), simulate=True)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+
+        def stop():
+            server.shutdown()
+            thread.join()
+            server.server_close()
+        self.addCleanup(stop)
+        server.starting = True
+
+        connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+        connection.request('GET', '/api/status')
+        status = json.loads(connection.getresponse().read().decode('utf-8'))
+        connection.request('POST', '/api/start', body=json.dumps({
+            'max_pulse': 180, 'blocks': [{'type': 'interval', 'minutes': 1, 'percent': 70}]}),
+            headers={'Content-Type': 'application/json',
+                     'Origin': 'http://127.0.0.1:%d' % server.server_port})
+        response = connection.getresponse()
+        error = json.loads(response.read().decode('utf-8'))['error']
+        connection.close()
+
+        self.assertTrue(status['starting'])
+        self.assertFalse(status['running'])
+        self.assertEqual(response.status, 409)
+        self.assertIn('venter på pulsen fra uret', error)
+
+
+class WatchStartTests(unittest.TestCase):
+    def start(self, mode, waits):
+        import glob
+        from unittest import mock
+        import workout
+
+        class FakeMonitor(object):
+            def __init__(self, address, path):
+                pass
+
+            def start(self):
+                pass
+
+            def wait_for_sample(self, timeout):
+                waits.append(timeout)
+                return False
+
+            def status(self):
+                return {'error': 'test'}
+
+            def stop(self):
+                pass
+
+        class FakeProcess(object):
+            def poll(self):
+                return None
+
+        server = WorkoutServer(('127.0.0.1', 0), simulate=True)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+        blocks = ([{'type': 'interval', 'minutes': 1, 'power': 150}] if mode == 'power'
+                  else [{'type': 'interval', 'minutes': 1, 'percent': 70}])
+        try:
+            with mock.patch.object(workout, 'HeartRateMonitor', FakeMonitor),                     mock.patch.object(workout.subprocess, 'Popen', lambda *a, **k: FakeProcess()):
+                connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=10)
+                connection.request('POST', '/api/start', body=json.dumps({
+                    'mode': mode, 'max_pulse': 180, 'blocks': blocks, 'device_type': 'simulator',
+                    'pulse_source': 'watch', 'heart_rate_address': 'AA:BB:CC:DD:EE:FF'}),
+                    headers={'Content-Type': 'application/json',
+                             'Origin': 'http://127.0.0.1:%d' % server.server_port})
+                response = connection.getresponse()
+                body = json.loads(response.read().decode('utf-8'))
+                connection.close()
+        finally:
+            server.process = None
+            server.shutdown()
+            thread.join()
+            server.server_close()
+            # Remove the live files a successful start leaves in data/.
+            if body.get('log'):
+                data = os.path.join(os.path.dirname(os.path.abspath(workout.__file__)), 'data')
+                for path in glob.glob(os.path.join(data, '.' + body['log'] + '.live*')):
+                    os.remove(path)
+            if server.session_file and os.path.exists(server.session_file):
+                os.remove(server.session_file)
+        return response.status, body
+
+    def test_watt_workout_starts_without_waiting_for_the_watch(self):
+        waits = []
+        status, body = self.start('power', waits)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(waits, [])
+
+    def test_pulse_workout_still_needs_the_watch(self):
+        waits = []
+        status, body = self.start('pulse', waits)
+
+        self.assertEqual(status, 400)
+        self.assertEqual(waits, [30])
+        self.assertIn('Ingen puls fra uret', body['error'])
+
+
 class NetworkOriginTests(unittest.TestCase):
     def start_server(self, host):
         server = WorkoutServer((host, 0))

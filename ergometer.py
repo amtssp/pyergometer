@@ -83,6 +83,10 @@ class Ergometer:
         if not self.heart_rate_file:
             self.heart_rate_fresh = True
             return True
+        if os.path.exists(self.heart_rate_file) and os.path.getsize(self.heart_rate_file) == 0:
+            # The watch has not delivered its first pulse yet (a watt workout starts without it).
+            self.heart_rate_fresh = False
+            return False
         try:
             sample = read_shared_json(self.heart_rate_file)
             pulse = sample['pulse']

@@ -2153,16 +2153,19 @@
             }, 4000);
           }
           statusFailures = 0;
-          busy = data.running;
+          // While a start waits for the watch, keep the page locked as if it were running.
+          var starting = data.starting === true;
+          busy = data.running || starting;
           stopping = data.stopping;
           canStop = data.can_stop === true;
-          startButton.disabled = stopping || (busy && !canStop);
-          document.body.classList.toggle('workout-running', busy);
-          startButton.textContent = stopping ? 'Stopper træning…'
-            : busy ? canStop ? 'Stop træning' : 'Stop kræver genstart'
-              : 'Start træning';
-          startButton.classList.toggle('danger', busy && canStop);
-          startButton.classList.toggle('primary', !busy);
+          startButton.disabled = starting || stopping || (busy && !canStop);
+          document.body.classList.toggle('workout-running', data.running);
+          startButton.textContent = starting ? 'Forbinder til uret …'
+            : stopping ? 'Stopper træning…'
+              : busy ? canStop ? 'Stop træning' : 'Stop kræver genstart'
+                : 'Start træning';
+          startButton.classList.toggle('danger', data.running && canStop);
+          startButton.classList.toggle('primary', !data.running);
           document.querySelectorAll('input[name="pulse-source"]').forEach(function (radio) {
             radio.disabled = busy;
           });
@@ -2190,17 +2193,24 @@
                 data.heart_rate.pulse + ' bpm';
             } else {
               watchStatus.className = 'error';
-              watchStatus.textContent = data.heart_rate.error +
-                (busy ? '. Belastningen fastholdes, indtil pulsmålingen kommer tilbage.' : '');
+              watchStatus.textContent = data.heart_rate.error + (!busy ? ''
+                : workoutMode === 'power' ? '. Belastningen følger planen imens.'
+                  : '. Belastningen fastholdes, indtil pulsmålingen kommer tilbage.');
             }
           }
-          if (busy) {
+          if (starting) {
+            status.className = '';
+            status.textContent = 'Forbinder til uret. Hold pulsdelingen på uret slået til.';
+          } else if (busy) {
             if (stopping) {
               status.className = '';
               status.textContent = 'Træningen stoppes. Belastningen sættes ned til 25 W.';
             } else if (!canStop) {
               status.className = 'muted';
               status.textContent = 'Stop kræver den opdaterede server. Den aktive træning fortsætter uændret; genstart først, når træningen er afsluttet.';
+            } else if (data.heart_rate && !data.heart_rate.fresh && workoutMode === 'power') {
+              status.className = 'muted';
+              status.textContent = 'Venter på puls fra uret. Belastningen følger planen.';
             } else if (data.heart_rate && !data.heart_rate.fresh) {
               status.className = 'error';
               status.textContent = 'Fejl med Bluetooth-forbindelsen til uret. ' +
@@ -2209,6 +2219,9 @@
               status.className = '';
               status.textContent = 'Træningen kører. Loggen gemmes, når den er færdig.';
             }
+          } else if (status.textContent === 'Forbinder til uret. Hold pulsdelingen på uret slået til.') {
+            status.className = '';
+            status.textContent = '';
           } else if (data.error) {
             status.className = 'error';
             status.textContent = data.error;
