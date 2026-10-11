@@ -222,7 +222,15 @@
     /* Chart */
     #summary { font-size: .92rem; }
     #pulse-chart { display: block; width: 100%; min-height: 18rem; touch-action: none; }
-    #chart-message { min-height: 1.4em; font-size: .92rem; }
+    #chart-message {
+      min-height: 1.4em;
+      font-size: .92rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* The plan summary changes length with every edit; hide it while riding. */
+    body.workout-running #summary { display: none; }
     #chart-help { margin: .25rem 0 .5rem; font-size: .85rem; }
     .chart-foot {
       display: flex;
@@ -256,12 +264,22 @@
     }
     .workout-name {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       align-items: baseline;
       gap: .1rem .6rem;
       margin: .15rem 0 .2rem;
     }
-    #workout-name { font-size: 1.45rem; font-weight: 800; letter-spacing: -.01em; overflow-wrap: anywhere; }
+    #workout-name {
+      min-width: 0;
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: -.01em;
+      /* One line, so a longer name cannot push the chart down. */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #workout-name-state { flex: none; }
     #workout-name-state { font-size: .88rem; font-weight: 600; }
     #workout-name-state.running { color: #c62828; }
 
@@ -316,7 +334,17 @@
     }
     #pulse-now { display: block; font-size: 2.6rem; font-weight: 800; letter-spacing: -.03em; }
     .pulse-value small { font-size: .8rem; font-weight: 600; opacity: .9; }
-    #pulse-target { margin-top: .2rem; text-align: center; font-size: .85rem; font-weight: 600; }
+    #pulse-target {
+      margin-top: .2rem;
+      padding: .1rem .5rem;
+      border-radius: 999px;
+      text-align: center;
+      font-size: .85rem;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: background .3s ease, color .3s ease;
+    }
+    #pulse-target.flash { background: #d7f0dd; color: #14532d; }
     @keyframes heartbeat {
       0%, 100% { transform: scale(1); }
       15% { transform: scale(1.06); }
@@ -780,6 +808,7 @@
           pulseTarget.textContent = 'Pulsgrænse · sænket';
           return;
         }
+        if (Date.now() < targetFeedbackUntil) return;
         var block = ((data.plan && data.plan.blocks) || []).filter(function (item) {
           return last.elapsed >= item.start && last.elapsed < item.end;
         })[0];
@@ -935,15 +964,29 @@
           setBlockField(block.index, fieldName, value);
           return value;
         });
-        status.className = 'success';
+        // Confirm under the heart, not in the top bar: a longer status text there
+        // wraps on a phone, changes the bar's height and makes the chart jump.
         if (block.type === 'interval') {
-          status.textContent = 'Nyt pulsmål: ' + Math.floor((plan.max_pulse * values[0] + 50) / 100) +
-            ' bpm (' + values[0] + ' %). Slår igennem ved næste regulering.';
+          showTargetFeedback('Mål ' + Math.floor((plan.max_pulse * values[0] + 50) / 100) + ' bpm');
         } else if (block.type === 'ramp') {
-          status.textContent = 'Ny rampe: ' + values[0] + '→' + values[1] + unit + '.';
+          showTargetFeedback('Rampe ' + values[0] + '→' + values[1] + unit);
         } else {
-          status.textContent = 'Ny belastning: ' + values[0] + ' W.';
+          showTargetFeedback('Mål ' + values[0] + ' W');
         }
+      }
+
+      var targetFeedbackUntil = 0;
+      var targetFeedbackTimer = null;
+
+      function showTargetFeedback(text) {
+        // Keep the new target visible until the controller has picked it up.
+        targetFeedbackUntil = Date.now() + 2500;
+        pulseTarget.textContent = text;
+        pulseTarget.classList.add('flash');
+        window.clearTimeout(targetFeedbackTimer);
+        targetFeedbackTimer = window.setTimeout(function () {
+          pulseTarget.classList.remove('flash');
+        }, 1500);
       }
 
       targetUpButton.addEventListener('click', function () { adjustCurrentTarget(1); });
@@ -957,6 +1000,8 @@
         }
 
         var plan = getPlan();
+        // A live change keeps the running workout's name (without "(ændret)").
+        if (latestChart.plan && latestChart.plan.name) plan.name = latestChart.plan.name;
         liveUpdateInFlight = true;
         fetch('/api/update', {
           method: 'POST',
@@ -970,8 +1015,6 @@
         }).then(function () {
           if (!liveUpdateQueued) {
             editedChartPlan = null;
-            status.className = 'success';
-            status.textContent = 'Live ændring sendt til ergometeret.';
             pollChart();
           }
         }).catch(function (error) {
@@ -2099,6 +2142,7 @@
           stopping = data.stopping;
           canStop = data.can_stop === true;
           startButton.disabled = stopping || (busy && !canStop);
+          document.body.classList.toggle('workout-running', busy);
           startButton.textContent = stopping ? 'Stopper træning…'
             : busy ? canStop ? 'Stop træning' : 'Stop kræver genstart'
               : 'Start træning';
