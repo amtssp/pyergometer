@@ -17,3 +17,4 @@ bike_settings.json
 data-test
 build/
 nohup.out
+.venv/

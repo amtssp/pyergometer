@@ -29,6 +29,28 @@ Quick start on Windows: double-click ``start.bat``. It starts the page on
 ``http://127.0.0.1:8765/`` and prints the address to use from other devices
 on the same network.
 
+Raspberry Pi
+------------
+
+Install Raspberry Pi OS Lite (64-bit) with Raspberry Pi Imager, with SSH,
+Wi-Fi and a hostname such as ``ergometer`` set in its settings. Log in with
+``ssh <user>@ergometer.local`` and run:
+
+    sudo apt update && sudo apt install -y git
+    git clone https://github.com/amtssp/pyergometer.git
+    cd pyergometer && ./install-pi.sh
+
+``install-pi.sh`` installs the Python packages in ``.venv``, gives the user
+access to the serial port and Bluetooth, sets a Kettler on ``/dev/ttyUSB0`` as
+the default bike, and installs the ``pyergometer`` service so the page starts
+whenever the Pi boots. Open ``http://ergometer.local:8765/`` from a phone,
+tablet or PC on the same network. Later, ``./update.sh`` fetches the newest
+version from GitHub and restarts the service; it refuses while a workout is
+running. Profiles, saved workouts, bike settings and logs are kept.
+
+Useful commands on the Pi: ``sudo systemctl status pyergometer`` and
+``journalctl -u pyergometer -f`` to follow the log.
+
 Starting the program without a session file opens a local workout builder:
 
     ./pyergometer.py
