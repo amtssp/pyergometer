@@ -482,6 +482,13 @@ def build_chart_plan(plan):
     return chart_plan
 
 
+def pulse_limit(chart_plan, enabled=True):
+    """The pulse at which a watt-controlled workout lowers its load, or None."""
+    if not enabled or chart_plan['mode'] != 'power' or not chart_plan['max_pulse']:
+        return None
+    return chart_plan['max_pulse'] * PULSE_LIMIT_PERCENT // 100
+
+
 def build_session_xml(plan):
     """Session XML for the controller, built from the same per-second steps as live updates."""
     steps = session_steps(build_chart_plan(plan))
@@ -1086,9 +1093,10 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         command.extend(['--live-control', live_control_path])
         command.append('--local-only')
         chart_plan = build_chart_plan(request)
-        if chart_plan['mode'] == 'power' and chart_plan['max_pulse']:
-            command.extend(['--pulse-limit',
-                            str(chart_plan['max_pulse'] * PULSE_LIMIT_PERCENT // 100)])
+        # The page sends pulse_limit false when the limit is switched off for this workout.
+        limit = pulse_limit(chart_plan, request.get('pulse_limit') is not False)
+        if limit:
+            command.extend(['--pulse-limit', str(limit)])
         if heart_rate_path:
             try:
                 with open(heart_rate_path, 'wb'):

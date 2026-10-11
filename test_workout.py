@@ -15,6 +15,7 @@ from workout import (
     local_network_addresses,
     _sampled_points,
     normalize_preset_plan,
+    pulse_limit,
     build_chart_plan,
     build_session_xml,
     create_profile,
@@ -995,6 +996,19 @@ class WattWorkoutTests(unittest.TestCase):
                     os.path.join(directory, 'profiles.json'),
                     os.path.join(directory, 'workouts.json'), 'Standard', name,
                     {'mode': 'power', 'blocks': [{'type': 'interval', 'minutes': 1, 'power': 150}]})
+
+    def test_pulse_limit_only_for_watt_workouts_with_a_maximum_pulse(self):
+        watt = build_chart_plan({'mode': 'power', 'max_pulse': 180,
+                                 'blocks': [{'type': 'interval', 'minutes': 1, 'power': 200}]})
+        no_maximum = build_chart_plan({'mode': 'power',
+                                       'blocks': [{'type': 'interval', 'minutes': 1, 'power': 200}]})
+        pulse = build_chart_plan({'max_pulse': 180,
+                                  'blocks': [{'type': 'interval', 'minutes': 1, 'percent': 70}]})
+
+        self.assertEqual(pulse_limit(watt), 171)
+        self.assertIsNone(pulse_limit(watt, enabled=False))
+        self.assertIsNone(pulse_limit(no_maximum))
+        self.assertIsNone(pulse_limit(pulse))
 
     def test_saved_watt_workout_keeps_its_mode(self):
         plan = {'mode': 'power', 'max_pulse': 180,

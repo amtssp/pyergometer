@@ -335,6 +335,15 @@
       transition: opacity .25s ease;
     }
     .saved-tick.show { opacity: 1; }
+    .limit-toggle {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin: .25rem 0 .5rem;
+      font-weight: 600;
+    }
+    .limit-toggle input { margin: 0; width: 1.2rem; height: 1.2rem; accent-color: #c62828; flex: none; }
+    .limit-toggle.off span { color: var(--muted); }
     .mode-switch { margin-bottom: .5rem; }
     .mode-switch label { display: flex; align-items: center; gap: .45rem; font-weight: 400; min-height: 2rem; }
     .mode-switch input { margin: 0; width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
@@ -393,6 +402,10 @@
         <div id="pulse-target" class="muted">Ingen måling</div>
       </div>
     </div>
+    <label id="pulse-limit-row" class="limit-toggle" hidden>
+      <input id="pulse-limit" type="checkbox" checked>
+      <span id="pulse-limit-text">Pulsgrænse</span>
+    </label>
     <div id="chart-message" class="muted" aria-live="polite">Grafen følger træningsplanen og opdateres én gang i sekundet.</div>
     <div class="chart-row">
       <svg id="pulse-chart" viewBox="0 0 900 400" role="img"
@@ -434,13 +447,42 @@
             <option value="vo2max-5x5">Watt · VO₂ Max 5 × 5</option>
           </select>
         </label>
-        <button id="apply-template" type="button">Brug skabelon</button>
+        <button id="apply-template" type="button">Indlæs</button>
       </div>
-      <p class="muted">Fælles skabeloner overskrives ikke. Tilpas passet og gem det under et nyt navn under &raquo;Gem træning&laquo;.</p>
+      <p class="muted">Fælles skabeloner overskrives ikke. Tilpas passet og gem det under et nyt navn under &raquo;Juster og gem den aktuelle træningsplan&laquo;.</p>
     </div>
   </section>
 
   <div class="section-label">Opsætning</div>
+
+  <details class="panel" id="plan-panel">
+    <summary><span id="plan-title">Juster og gem den aktuelle træningsplan</span></summary>
+    <div class="details-body">
+      <fieldset class="mode-switch">
+        <legend>Styring</legend>
+        <label><input type="radio" name="workout-mode" value="pulse" checked> Efter puls (pulsmål i % af max-puls)</label>
+        <label><input type="radio" name="workout-mode" value="power"> Efter watt (fast belastning)</label>
+      </fieldset>
+      <p id="mode-help" class="muted"></p>
+      <div id="blocks"></div>
+      <div class="actions">
+        <button id="add-interval" type="button">+ Interval</button>
+        <button id="add-break" type="button">+ Pause</button>
+        <button id="add-ramp" type="button">+ Rampe</button>
+        <button id="add-repeat" type="button">+ Gentagne intervaller</button>
+      </div>
+
+      <div class="subsection">
+        <div class="settings">
+          <label for="preset-name">Gem som
+            <input id="preset-name" type="text" maxlength="80" placeholder="Fx Rolig intervaltræning">
+          </label>
+          <button id="save-preset" type="button">Gem træning</button>
+        </div>
+        <p class="muted">Gemmes på den valgte bruger under &raquo;Mine gemte træninger&laquo;. Pulsmål gemmes i procent af max-puls, så de passer til brugerens max-puls. Brug et nyt navn for at gemme en kopi.</p>
+      </div>
+    </div>
+  </details>
 
   <details class="panel" id="profile-panel">
     <summary><span id="profile-title">Brugerprofil</span><span id="profile-hint" class="hint"></span></summary>
@@ -501,38 +543,6 @@
     </div>
   </details>
 
-  <details class="panel" id="plan-panel">
-    <summary><span id="plan-title">Træningsplan – intervaller og pauser</span></summary>
-    <div class="details-body">
-      <fieldset class="mode-switch">
-        <legend>Styring</legend>
-        <label><input type="radio" name="workout-mode" value="pulse" checked> Efter puls (pulsmål i % af max-puls)</label>
-        <label><input type="radio" name="workout-mode" value="power"> Efter watt (fast belastning)</label>
-      </fieldset>
-      <p id="mode-help" class="muted"></p>
-      <div id="blocks"></div>
-      <div class="actions">
-        <button id="add-interval" type="button">+ Interval</button>
-        <button id="add-break" type="button">+ Pause</button>
-        <button id="add-ramp" type="button">+ Rampe</button>
-        <button id="add-repeat" type="button">+ Gentagne intervaller</button>
-      </div>
-    </div>
-  </details>
-
-  <details class="panel">
-    <summary><span id="presets-title">Gem træning</span></summary>
-    <div class="details-body">
-      <div class="settings">
-        <label for="preset-name">Navn på opsætning
-          <input id="preset-name" type="text" maxlength="80" placeholder="Fx Rolig intervaltræning">
-        </label>
-        <button id="save-preset" type="button">Gem opsætning</button>
-      </div>
-      <p class="muted">Gemmes på den valgte bruger. Pulsmål gemmes i procent af max-puls.</p>
-    </div>
-  </details>
-
   <details class="panel" id="settings-panel">
     <summary><span id="settings-title">Indstillinger for cyklen</span><span id="settings-hint" class="hint"></span></summary>
     <div class="details-body">
@@ -560,6 +570,7 @@
       var startButton = document.getElementById('start');
       var birthYearInput = document.getElementById('birth-year');
       var workoutMode = 'pulse';
+      var pulseLimitBox = document.getElementById('pulse-limit');
       var chartGeometry = {left: 70, plotWidth: 805, plotHeight: 316};
       var targetUpButton = document.getElementById('target-up');
       var targetDownButton = document.getElementById('target-down');
@@ -850,6 +861,28 @@
           : 'Tilføj et interval eller en pause.';
         renderChart(latestChart);
         updateWorkoutName();
+        updatePulseLimitToggle();
+      }
+
+      // Share of maximum pulse at which a watt workout lowers its load (as on the server).
+      var PULSE_LIMIT_PERCENT = 95;
+
+      function updatePulseLimitToggle() {
+        var row = document.getElementById('pulse-limit-row');
+        var text = document.getElementById('pulse-limit-text');
+        var maximum = selectedMaxPulse();
+        // Only shown for a watt workout that has something to run.
+        row.hidden = workoutMode !== 'power' || !blocks.children.length;
+        pulseLimitBox.disabled = busy || !maximum;
+        if (!maximum) {
+          text.textContent = 'Pulsgrænse: ikke aktiv, fordi brugerprofilen ikke har en max-puls.';
+        } else if (pulseLimitBox.checked) {
+          text.textContent = 'Pulsgrænse: sænk belastningen ved ' + PULSE_LIMIT_PERCENT +
+            ' % af max-puls (' + Math.floor(maximum * PULSE_LIMIT_PERCENT / 100) + ' bpm)';
+        } else {
+          text.textContent = 'Pulsgrænse slået fra for denne træning';
+        }
+        row.classList.toggle('off', !maximum || !pulseLimitBox.checked);
       }
 
       function liveWorkoutRunning() {
@@ -1100,7 +1133,11 @@
         pulseChart.textContent = '';
         chartHelp.hidden = false;
         if (!plan || !plan.duration || !plan.blocks.length) {
-          chartMessage.textContent = 'Vælg max-puls og tilføj træningsintervaller for at se grafen.';
+          document.getElementById('chart-title').textContent = workoutMode === 'power'
+            ? 'Belastning og puls gennem træningen' : 'Puls gennem træningen';
+          chartMessage.textContent = workoutMode === 'power'
+            ? 'Tilføj trin, ramper eller gentagelser for at se grafen.'
+            : 'Vælg max-puls og tilføj træningsintervaller for at se grafen.';
           return;
         }
 
@@ -1529,6 +1566,7 @@
       function resetFormForProfile() {
         blocks.textContent = '';
         blocks.classList.remove('has-blocks');
+        setWorkoutMode('pulse', false);
         status.className = '';
         status.textContent = '';
         applyProfileMaxPulse();
@@ -1549,7 +1587,8 @@
 
         var title = document.createElement('h3');
         title.textContent = values.label || (
-          type === 'repeat' ? 'Gentagne høj-/lavintensitetsintervaller'
+          type === 'repeat' ? (powerMode ? 'Gentagne watt-intervaller (hårdt / let)'
+            : 'Gentagne pulsintervaller (hårdt / let)')
             : type === 'ramp' ? 'Rampe'
               : type === 'break' ? 'Pause med lav belastning'
                 : powerMode ? 'Trin med fast belastning' : 'Arbejdsinterval');
@@ -1641,6 +1680,7 @@
       function setWorkoutMode(mode, convertBlocks) {
         var previous = convertBlocks ? readBlocks() : null;
         workoutMode = mode === 'power' ? 'power' : 'pulse';
+        pulseLimitBox.checked = true;
         document.querySelector('input[name="workout-mode"][value="' + workoutMode + '"]').checked = true;
         var powerMode = workoutMode === 'power';
         document.getElementById('add-break').hidden = powerMode;
@@ -1706,6 +1746,7 @@
         return {
           name: workoutLabel(),
           mode: workoutMode,
+          pulse_limit: pulseLimitBox.checked,
           max_pulse_source: useBirthYear ? 'age' : 'manual',
           max_pulse: useBirthYear ? null : parseInt(maxPulse.value, 10),
           age: useBirthYear ? selectedAge() : null,
@@ -2072,6 +2113,7 @@
           deviceTypeSelect.disabled = busy;
           document.getElementById('device').disabled = busy;
           userProfile.disabled = busy;
+          updatePulseLimitToggle();
           document.querySelectorAll('input[name="workout-mode"]').forEach(function (radio) {
             radio.disabled = busy;
           });
@@ -2146,6 +2188,7 @@
         }
       );
       setWorkoutMode('pulse', false);
+      pulseLimitBox.addEventListener('change', updatePulseLimitToggle);
       document.getElementById('apply-template').addEventListener('click', function () {
         var templates = {
           'hiit-30-30': {
@@ -2155,7 +2198,6 @@
               {type: 'interval', label: 'Opvarmning', minutes: 4, percent: 55},
               {
                 type: 'repeat',
-                label: 'Gentagne høj-/lavintensitetsintervaller',
                 count: 13,
                 work_seconds: 30,
                 work_percent: 85,
@@ -2175,7 +2217,6 @@
               {type: 'interval', label: 'Let inden intervallerne', minutes: 2, power: 125},
               {
                 type: 'repeat',
-                label: 'VO₂ max-intervaller',
                 count: 5,
                 work_seconds: 60,
                 work_power: 285,
