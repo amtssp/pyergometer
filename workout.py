@@ -32,6 +32,9 @@ MIN_POWER = 25
 MAX_POWER = 1000
 # In watt-controlled workouts the load is reduced above this share of maximum pulse.
 PULSE_LIMIT_PERCENT = 95
+# Seconds a start waits for the first watch pulse: finding and connecting the
+# watch takes up to about 15 seconds on a Raspberry Pi.
+WATCH_START_TIMEOUT = 30
 BUILTIN_TEMPLATE_NAMES = ('Puls · HIIT 30/30 (13 gentagelser)', 'Watt · VO₂ Max 5 × 5',
                           'HIIT 30/30 (13 gentagelser)')
 
@@ -1143,7 +1146,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             self.server.starting = True
             self.server.lock.release()
             try:
-                watch_ready = monitor.wait_for_sample(15)
+                watch_ready = monitor.wait_for_sample(WATCH_START_TIMEOUT)
             finally:
                 self.server.lock.acquire()
                 self.server.starting = False
@@ -1159,9 +1162,9 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 if os.path.exists(heart_rate_path + '.status'):
                     os.remove(heart_rate_path + '.status')
                 self._send_json(400, {
-                    'error': 'Ingen puls fra uret inden for 15 sekunder (%s). Slå urets '
+                    'error': 'Ingen puls fra uret inden for %d sekunder (%s). Slå urets '
                              'Bluetooth-pulsdeling til og prøv igen.' % (
-                                 watch_error or 'ingen forbindelse')
+                                 WATCH_START_TIMEOUT, watch_error or 'ingen forbindelse')
                 })
                 return
             command.extend(['--heart-rate-file', heart_rate_path])

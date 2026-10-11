@@ -10,6 +10,10 @@ import time
 # On Windows a file cannot be opened while another process swaps it with os.replace,
 # so readers and the writer retry briefly instead of failing a whole control step.
 FILE_RETRY_ATTEMPTS = 50
+# On Linux (BlueZ) the watch must be found by a scan before it can be connected,
+# and the two together can take longer than bleak's default 10 seconds.
+FIND_TIMEOUT = 20.0
+CONNECT_TIMEOUT = 30.0
 FILE_RETRY_DELAY = 0.02
 
 
@@ -235,10 +239,14 @@ class _HeartRateWorker:
         self.last_sample_at = sample_time
 
     async def _watch(self):
-        client_type, unused_scanner = _bleak_modules()
+        client_type, scanner_type = _bleak_modules()
         while True:
             try:
-                async with client_type(self.address) as client:
+                device = await scanner_type.find_device_by_address(
+                    self.address, timeout=FIND_TIMEOUT)
+                if device is None:
+                    raise RuntimeError('uret blev ikke fundet; er pulsdelingen slået til?')
+                async with client_type(device, timeout=CONNECT_TIMEOUT) as client:
                     characteristic = client.services.get_characteristic(
                         HEART_RATE_MEASUREMENT_UUID)
                     if characteristic is None:
@@ -261,7 +269,9 @@ class _HeartRateWorker:
                     self._write_connection_state()
             except Exception as error:
                 self.connected = False
-                self.error = 'Forbindelsen til uret fejlede: %s' % error
+                # A timeout has no message of its own; name it so the page shows something useful.
+                self.error = 'Forbindelsen til uret fejlede: %s' % (
+                    str(error) or type(error).__name__)
                 self._write_connection_state()
             await asyncio.sleep(2)
 
