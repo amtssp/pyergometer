@@ -10,6 +10,7 @@ import threading
 import webbrowser
 import xml.etree.ElementTree as ET
 from bleheartrate import HeartRateMonitor, scan_heart_rate_devices
+from liveplan import ramp_value, session_steps
 from devices import DEFAULT_DEVICE_TYPE, device_type, device_type_ids, public_device_types
 try:
     from urllib.parse import parse_qs, urlparse
@@ -24,7 +25,13 @@ except ImportError:
 
 MAX_REQUEST_SIZE = 65536
 MAX_WORKOUT_SECONDS = 12 * 60 * 60
-BUILTIN_TEMPLATE_NAMES = ('HIIT 30/30 (13 gentagelser)',)
+WORKOUT_MODES = ('pulse', 'power')
+MIN_POWER = 25
+MAX_POWER = 1000
+# In watt-controlled workouts the load is reduced above this share of maximum pulse.
+PULSE_LIMIT_PERCENT = 95
+BUILTIN_TEMPLATE_NAMES = ('Puls · HIIT 30/30 (13 gentagelser)', 'Watt · VO₂ Max 5 × 5',
+                          'HIIT 30/30 (13 gentagelser)')
 
 try:
     integer_types = (int, long)
@@ -75,13 +82,17 @@ def _maximum_pulse(plan):
 
 
 def normalize_preset_plan(plan):
-    """Keep only the workout blocks; maximum pulse belongs to the user profile."""
+    """Keep only the mode and blocks; maximum pulse belongs to the user profile."""
     if not isinstance(plan, dict):
         raise ValueError('Workout data must be an object')
-    # Validate the blocks with a placeholder maximum; targets are stored as percentages.
-    build_session_xml({'max_pulse_source': 'manual', 'max_pulse': 200,
-                       'blocks': plan.get('blocks')})
-    return {'blocks': [dict(block) for block in plan['blocks']]}
+    mode = plan.get('mode', 'pulse')
+    # Validate the blocks with a placeholder maximum; pulse targets are stored as percentages.
+    build_chart_plan({'mode': mode, 'max_pulse_source': 'manual', 'max_pulse': 200,
+                      'blocks': plan.get('blocks')})
+    normalized = {'blocks': [dict(block) for block in plan['blocks']]}
+    if mode != 'pulse':
+        normalized['mode'] = mode
+    return normalized
 
 
 def normalize_profile_max_pulse(max_pulse):
@@ -363,123 +374,132 @@ def save_profile_preset(path, legacy_presets_path, profile_name, name, plan):
     raise ValueError('User profile was not found')
 
 
-def build_session_xml(plan):
+def _target_pulse(maximum_pulse, percent):
+    return (maximum_pulse * percent + 50) // 100
+
+
+def _power(value, name):
+    return _integer(value, name, MIN_POWER, MAX_POWER)
+
+
+def _optional_maximum_pulse(plan):
+    try:
+        return _maximum_pulse(plan)
+    except ValueError:
+        return None
+
+
+def build_chart_plan(plan):
+    """Validate a workout and expand it into chart blocks with absolute times.
+
+    A workout is either pulse-controlled (mode 'pulse', targets in percent of
+    maximum pulse) or watt-controlled (mode 'power', loads in watts). Pauses at
+    a fixed load are allowed in both; ramps change the target linearly.
+    """
     if not isinstance(plan, dict):
         raise ValueError('Workout data must be an object')
-
-    maximum_pulse = _maximum_pulse(plan)
+    mode = plan.get('mode', 'pulse')
+    if mode not in WORKOUT_MODES:
+        raise ValueError('Workout mode must be pulse or power')
+    maximum_pulse = _maximum_pulse(plan) if mode == 'pulse' else _optional_maximum_pulse(plan)
     blocks = plan.get('blocks')
     if not isinstance(blocks, list) or not blocks:
         raise ValueError('Add at least one interval or break')
 
-    parsed_blocks = []
-    total_seconds = 0
+    chart_blocks = []
+    elapsed = 0
     for index, block in enumerate(blocks):
         if not isinstance(block, dict):
             raise ValueError('Block %d is invalid' % (index + 1))
-
+        label = 'Block %d' % (index + 1)
         block_type = block.get('type')
+        entries = []
         if block_type == 'interval':
-            duration = _duration_seconds(
-                block.get('minutes'), 'Block %d duration' % (index + 1))
-            percent = _integer(block.get('percent'), 'Interval %d target' % (index + 1), 1, 100)
-            pulse = (maximum_pulse * percent + 50) // 100
-            parsed_blocks.append(('pulse', pulse, duration))
-            block_duration = duration
+            duration = _duration_seconds(block.get('minutes'), '%s duration' % label)
+            if mode == 'pulse':
+                percent = _integer(block.get('percent'), '%s target' % label, 1, 100)
+                entries.append(({'type': 'interval', 'percent': percent,
+                                 'pulse': _target_pulse(maximum_pulse, percent)}, duration))
+            else:
+                entries.append(({'type': 'power',
+                                 'power': _power(block.get('power'), '%s load' % label)},
+                                duration))
         elif block_type == 'break':
-            duration = _duration_seconds(
-                block.get('minutes'), 'Block %d duration' % (index + 1))
-            power = _integer(block.get('power'), 'Break %d load' % (index + 1), 25, 400)
+            duration = _duration_seconds(block.get('minutes'), '%s duration' % label)
+            power = _integer(block.get('power'), '%s load' % label, 25, 400)
             if power % 5:
-                raise ValueError('Break %d load must be in 5-watt increments' % (index + 1))
-            parsed_blocks.append(('power', power, duration))
-            block_duration = duration
+                raise ValueError('%s load must be in 5-watt increments' % label)
+            entries.append(({'type': 'break', 'power': power}, duration))
+        elif block_type == 'ramp':
+            duration = _duration_seconds(block.get('minutes'), '%s duration' % label)
+            if mode == 'pulse':
+                first = _integer(block.get('start_percent'), '%s start' % label, 1, 100)
+                last = _integer(block.get('end_percent'), '%s end' % label, 1, 100)
+                entries.append(({'type': 'ramp', 'kind': 'pulse',
+                                 'start_percent': first, 'end_percent': last,
+                                 'start_value': _target_pulse(maximum_pulse, first),
+                                 'end_value': _target_pulse(maximum_pulse, last)}, duration))
+            else:
+                entries.append(({'type': 'ramp', 'kind': 'power',
+                                 'start_value': _power(block.get('start_power'), '%s start' % label),
+                                 'end_value': _power(block.get('end_power'), '%s end' % label)},
+                                duration))
         elif block_type == 'repeat':
             count = _integer(block.get('count'), 'Repeat count %d' % (index + 1), 1, 100)
-            work_duration = _integer(
-                block.get('work_seconds'), 'Work interval duration', 1, 3600)
-            recovery_duration = _integer(
-                block.get('recovery_seconds'), 'Recovery interval duration', 1, 3600)
-            work_percent = _integer(
-                block.get('work_percent'), 'Work interval target', 1, 100)
-            recovery_percent = _integer(
-                block.get('recovery_percent'), 'Recovery interval target', 1, 100)
-            work_pulse = (maximum_pulse * work_percent + 50) // 100
-            recovery_pulse = (maximum_pulse * recovery_percent + 50) // 100
+            phases = []
+            for phase in ('work', 'recovery'):
+                seconds = _integer(block.get(phase + '_seconds'),
+                                   '%s %s duration' % (label, phase), 1, 3600)
+                if mode == 'pulse':
+                    percent = _integer(block.get(phase + '_percent'),
+                                       '%s %s target' % (label, phase), 1, 100)
+                    entry = {'type': 'interval', 'percent': percent,
+                             'pulse': _target_pulse(maximum_pulse, percent)}
+                else:
+                    entry = {'type': 'power',
+                             'power': _power(block.get(phase + '_power'),
+                                             '%s %s load' % (label, phase))}
+                entry.update({'draggable': False, 'repeat_phase': phase})
+                phases.append((entry, seconds))
             for unused in range(count):
-                parsed_blocks.append(('pulse', work_pulse, work_duration))
-                parsed_blocks.append(('pulse', recovery_pulse, recovery_duration))
-            block_duration = count * (work_duration + recovery_duration)
+                entries.extend((dict(entry), seconds) for entry, seconds in phases)
         else:
-            raise ValueError('Block %d must be an interval, break or repeat' % (index + 1))
+            raise ValueError('%s must be an interval, break, ramp or repeat' % label)
 
-        total_seconds += block_duration
-        if total_seconds > MAX_WORKOUT_SECONDS:
+        for entry, duration in entries:
+            entry.update({'index': index, 'start': elapsed, 'end': elapsed + duration})
+            chart_blocks.append(entry)
+            elapsed += duration
+        if elapsed > MAX_WORKOUT_SECONDS:
             raise ValueError('Total workout duration cannot exceed 12 hours')
 
-    root = ET.Element('program', name='Custom workout', duration='%ds' % total_seconds)
-    events = ET.SubElement(root, 'timeEvents')
-    for index, (action, value, duration) in enumerate(parsed_blocks):
-        event_time = '0' if index == 0 else '+%ds' % parsed_blocks[index - 1][2]
-        event = ET.SubElement(events, 'timeEvent', time=event_time)
-        ET.SubElement(event, 'action', type=action, value=str(value))
-
-    return ET.tostring(root, encoding='utf-8')
-
-
-def build_chart_plan(plan):
-    maximum_pulse = _maximum_pulse(plan)
-    blocks = []
-    elapsed = 0
-    for group_index, block in enumerate(plan['blocks']):
-        if block['type'] == 'repeat':
-            count = block['count']
-            for unused in range(count):
-                for phase, seconds_key, percent_key in (
-                        ('work', 'work_seconds', 'work_percent'),
-                        ('recovery', 'recovery_seconds', 'recovery_percent')):
-                    duration = block[seconds_key]
-                    percent = block[percent_key]
-                    value = (maximum_pulse * percent + 50) // 100
-                    blocks.append({
-                        'type': 'interval',
-                        'index': group_index,
-                        'draggable': False,
-                        'repeat_phase': phase,
-                        'start': elapsed,
-                        'end': elapsed + duration,
-                        'pulse': value,
-                        'percent': percent
-                    })
-                    elapsed += duration
-            continue
-
-        duration = int(round(block['minutes'] * 60))
-        if block['type'] == 'interval':
-            value = (maximum_pulse * block['percent'] + 50) // 100
-            blocks.append({
-                'type': 'interval',
-                'index': group_index,
-                'start': elapsed,
-                'end': elapsed + duration,
-                'pulse': value,
-                'percent': block['percent']
-                })
-        else:
-            blocks.append({
-                'type': 'break',
-                'index': group_index,
-                'start': elapsed,
-                'end': elapsed + duration,
-                'power': block['power']
-                })
-        elapsed += duration
-    chart_plan = {'max_pulse': maximum_pulse, 'duration': elapsed, 'blocks': blocks}
+    chart_plan = {'mode': mode, 'max_pulse': maximum_pulse, 'duration': elapsed,
+                  'blocks': chart_blocks}
     # The workout name is only shown above the chart; it does not affect control.
     name = plan.get('name')
     if isinstance(name, text_types) and name.strip():
         chart_plan['name'] = name.strip()[:100]
     return chart_plan
+
+
+def build_session_xml(plan):
+    """Session XML for the controller, built from the same per-second steps as live updates."""
+    steps = session_steps(build_chart_plan(plan))
+    events = []
+    for step in steps:
+        action, value = ('power', step['power']) if step['power'] > 0 else ('pulse', step['pulse'])
+        if events and events[-1][0] == action and events[-1][1] == value:
+            events[-1][2] += 1
+        else:
+            events.append([action, value, 1])
+
+    root = ET.Element('program', name='Custom workout', duration='%ds' % len(steps))
+    timeline = ET.SubElement(root, 'timeEvents')
+    for index, (action, value, unused) in enumerate(events):
+        event_time = '0' if index == 0 else '+%ds' % events[index - 1][2]
+        event = ET.SubElement(timeline, 'timeEvent', time=event_time)
+        ET.SubElement(event, 'action', type=action, value=str(value))
+    return ET.tostring(root, encoding='utf-8')
 
 
 def _sampled_points(points, limit=600):
@@ -548,6 +568,7 @@ class WorkoutServer(HTTPServer):
         self.heart_rate_path = None
         self.chart_file_position = 0
         self.chart_points = []
+        self.chart_limited = False
         self.demo_started_at = None
         self.demo_elapsed = 0
         self.demo_pulse = 82
@@ -566,6 +587,7 @@ class WorkoutServer(HTTPServer):
         self.demo_points = [{'elapsed': 0, 'pulse': self.demo_pulse}]
 
     def reset_chart(self):
+        self.chart_limited = False
         self.chart_plan = None
         self.chart_live_path = None
         self.chart_control_path = None
@@ -589,16 +611,24 @@ class WorkoutServer(HTTPServer):
                 self.demo_block_index += 1
 
             block = self.chart_plan['blocks'][self.demo_block_index]
+            maximum_pulse = self.chart_plan.get('max_pulse') or 190
             if block['type'] == 'interval':
                 target = block['pulse']
+            elif block['type'] == 'ramp':
+                value = ramp_value(block['start_value'], block['end_value'],
+                                   block['end'] - block['start'],
+                                   self.demo_elapsed - block['start'])
+                target = value if block['kind'] == 'pulse' else 70 + value * 0.3
+            elif block['type'] == 'power':
+                # A rough pulse response to the load, for the demo only.
+                target = 70 + block['power'] * 0.3
             else:
-                target = min(115, int(self.chart_plan['max_pulse'] * 0.65))
+                target = min(115, int(maximum_pulse * 0.65))
 
             drift = (target - self.demo_pulse) * 0.025
             variation = 1.2 * math.sin(self.demo_elapsed / 9.0)
             self.demo_pulse = max(
-                55, min(self.chart_plan['max_pulse'],
-                        int(round(self.demo_pulse + drift + variation))))
+                55, min(maximum_pulse, int(round(self.demo_pulse + drift + variation))))
             self.demo_points.append({
                 'elapsed': self.demo_elapsed,
                 'pulse': self.demo_pulse
@@ -682,6 +712,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 for line in complete_chunk.splitlines():
                     if line.strip():
                         sample = json.loads(line.decode('utf-8'))
+                        self.server.chart_limited = sample.get('limited') is True
                         points.append({
                             'elapsed': int(sample['elapsed']),
                             'pulse': int(sample['pulse'])
@@ -705,7 +736,8 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             'elapsed': elapsed,
             'points': _sampled_points(points),
             'mode': mode,
-            'active': active
+            'active': active,
+            'limited': mode == 'real' and active and self.server.chart_limited
             })
 
     def do_GET(self):
@@ -1053,6 +1085,10 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         command.extend(['--live-log', live_log_path])
         command.extend(['--live-control', live_control_path])
         command.append('--local-only')
+        chart_plan = build_chart_plan(request)
+        if chart_plan['mode'] == 'power' and chart_plan['max_pulse']:
+            command.extend(['--pulse-limit',
+                            str(chart_plan['max_pulse'] * PULSE_LIMIT_PERCENT // 100)])
         if heart_rate_path:
             try:
                 with open(heart_rate_path, 'wb'):
@@ -1114,7 +1150,8 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         self.server.last_exit_code = None
         self.server.last_error = None
         self.server.stop_requested = False
-        self.server.chart_plan = build_chart_plan(request)
+        self.server.chart_plan = chart_plan
+        self.server.chart_limited = False
         self.server.chart_live_path = live_log_path
         self.server.chart_control_path = live_control_path
         self.server.heart_rate_monitor = monitor

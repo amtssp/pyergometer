@@ -28,6 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--live-control', action='store', dest='live_control', default=None, help='Read live workout updates from JSON lines file')
     parser.add_argument('--heart-rate-file', action='store', dest='heart_rate_file', default=None, help='Read Bluetooth heart-rate samples from JSON file')
     parser.add_argument('--local-only', action='store_true', dest='local_only', help='Accepted for compatibility; nothing is uploaded')
+    parser.add_argument('--pulse-limit', action='store', dest='pulse_limit', type=int, default=None, help='Lower fixed watt loads while the pulse is at or above this value')
     parser.add_argument('--host', action='store', dest='host', default='127.0.0.1', help='Workout builder address; use 0.0.0.0 to allow tablets and phones on the local network')
     parser.add_argument('--port', action='store', dest='port', type=int, default=8765, help='Workout builder port (default 8765)')
     parser.add_argument('--no-browser', action='store_false', dest='open_browser', help='Do not open the workout builder in a local browser')
@@ -52,6 +53,7 @@ if __name__ == '__main__':
     ergometer = Ergometer(device=create_device(type_id, args.device), session=session,
                           log=args.log, live_log=args.live_log,
                           live_control=args.live_control,
-                          heart_rate_file=args.heart_rate_file)
+                          heart_rate_file=args.heart_rate_file,
+                          pulse_limit=args.pulse_limit)
     
     ergometer.run()

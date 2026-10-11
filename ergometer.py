@@ -8,10 +8,19 @@ import time
 from bleheartrate import read_shared_json
 
 
+# Above the pulse limit a watt step is lowered by this much per second, and raised
+# back by the recovery amount once the pulse is a few beats below the limit again.
+LIMIT_REDUCTION_STEP = 10
+LIMIT_RECOVERY_STEP = 5
+LIMIT_HYSTERESIS = 5
+
+
 class Ergometer:
     def __init__(self, device=None, session=None, log=None, live_log=None,
-                 live_control=None, heart_rate_file=None):
+                 live_control=None, heart_rate_file=None, pulse_limit=None):
         self.device = device
+        self.pulse_limit = pulse_limit
+        self.limit_reduction = 0
         self.session = session
         self.pc = 0
         self.live_log_file = open(live_log, 'w') if live_log else None
@@ -41,7 +50,9 @@ class Ergometer:
                 if not self.heart_rate_fresh:
                     self.device.pulse = 0
 
-            if self.device.rpm < 20 or self.device.pulse < 20:
+            # A watt-controlled start only needs pedalling; a pulse target also needs a pulse.
+            needs_pulse = self.session.step(0)['pulse'] > 0
+            if self.device.rpm < 20 or (needs_pulse and self.device.pulse < 20):
                 sys.stderr.write('.')
                 time.sleep(1.0)
             else:
@@ -100,11 +111,11 @@ class Ergometer:
         if self.heart_rate_file:
             self.refresh_heart_rate()
 
-        if self.device.rpm < 20 or self.device.pulse < 20:
+        step = self.session.step(elapsed)
+        if self.device.rpm < 20 or (step['pulse'] > 0 and self.device.pulse < 20):
             sys.stderr.write('.')
             return
 
-        step = self.session.step(elapsed)
         sys.stderr.write('\n%d/%d bpm\t%d W\t%d rpm' % (
             int(self.device.pulse), int(step['pulse']),
             int(self.device.power), self.device.rpm))
@@ -119,18 +130,23 @@ class Ergometer:
             sample = {
                 'elapsed': elapsed,
                 'pulse': int(self.device.pulse),
-                'target_pulse': int(step['pulse'])
+                'target_pulse': int(step['pulse']),
+                'target_power': int(step['power']),
+                'power': int(self.device.power),
+                'limited': self.limit_reduction > 0
             }
             self.live_log_file.write(json.dumps(sample) + '\n')
             self.live_log_file.flush()
 
         self.pc = elapsed + 1
+        if step['power'] > 0.0:
+            self.device.set_power(absolute=self.limited_power(step['power']))
+            return
+        self.limit_reduction = 0
         if self.heart_rate_file and not self.heart_rate_fresh:
             return
 
-        if step['power'] > 0.0:
-            self.device.set_power(absolute=step['power'])
-        elif step['pulse'] > 0.0:
+        if step['pulse'] > 0.0:
             difference = step['pulse'] - self.device.pulse
             if -5.0 <= difference <= 0:
                 return
@@ -147,6 +163,18 @@ class Ergometer:
 
             self.device.set_power(
                 relative=relative_change if difference > 0 else -relative_change)
+
+    def limited_power(self, power):
+        """Lower a fixed load while the pulse is above the limit, then restore it gradually."""
+        pulse_known = self.device.pulse >= 20 and (
+            not self.heart_rate_file or self.heart_rate_fresh)
+        if self.pulse_limit and pulse_known:
+            if self.device.pulse >= self.pulse_limit:
+                self.limit_reduction += LIMIT_REDUCTION_STEP
+            elif self.device.pulse < self.pulse_limit - LIMIT_HYSTERESIS:
+                self.limit_reduction = max(0, self.limit_reduction - LIMIT_RECOVERY_STEP)
+        self.limit_reduction = min(self.limit_reduction, max(0, power - 25))
+        return power - self.limit_reduction
 
     def poll_live_updates(self):
         if not self.live_control:

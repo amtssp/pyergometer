@@ -24,6 +24,8 @@
       background: var(--bg);
     }
     * { box-sizing: border-box; }
+    /* Elements with their own display value must still disappear when hidden. */
+    [hidden] { display: none !important; }
     body {
       max-width: 960px;
       margin: 0 auto;
@@ -235,6 +237,7 @@
     .legend-swatch { display: inline-block; width: 1rem; height: .8rem; border-radius: 2px; }
     .legend-target { background: #4a90c2; }
     .legend-break { background: #d5dce3; }
+    .legend-watt { background: #e8a23c; }
     .legend-measured { height: 3px; background: #bf3434; }
     .legend-progress { width: 0; height: .9rem; border-left: 2px dashed #293642; border-radius: 0; }
 
@@ -332,6 +335,9 @@
       transition: opacity .25s ease;
     }
     .saved-tick.show { opacity: 1; }
+    .mode-switch { margin-bottom: .5rem; }
+    .mode-switch label { display: flex; align-items: center; gap: .45rem; font-weight: 400; min-height: 2rem; }
+    .mode-switch input { margin: 0; width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
     .details-body > .subsection:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 
     @media (max-width: 640px) {
@@ -401,8 +407,9 @@
     <p id="chart-help" class="muted">Træk i en blå mållinje for at ændre pulsen, eller i en orange diamant for at ændre varigheden. Under træning slår ændringer igennem ved næste regulering.</p>
     <div class="chart-foot">
       <div class="chart-legend" aria-label="Signaturforklaring">
-        <span class="legend-item"><span class="legend-swatch legend-target"></span>Ønsket puls</span>
-        <span class="legend-item"><span class="legend-swatch legend-break"></span>Pause, lav watt</span>
+        <span class="legend-item" id="legend-pulse"><span class="legend-swatch legend-target"></span>Ønsket puls</span>
+        <span class="legend-item" id="legend-pause"><span class="legend-swatch legend-break"></span>Pause, lav watt</span>
+        <span class="legend-item" id="legend-watt" hidden><span class="legend-swatch legend-watt"></span>Belastning (W)</span>
         <span class="legend-item"><span class="legend-swatch legend-measured"></span>Målt puls</span>
         <span class="legend-item"><span class="legend-swatch legend-progress"></span>Forløb</span>
       </div>
@@ -423,7 +430,8 @@
         <label for="builtin-template">Fælles skabeloner
           <select id="builtin-template">
             <option value="">Vælg fælles træningspas</option>
-            <option value="hiit-30-30">HIIT 30/30 (13 gentagelser)</option>
+            <option value="hiit-30-30">Puls · HIIT 30/30 (13 gentagelser)</option>
+            <option value="vo2max-5x5">Watt · VO₂ Max 5 × 5</option>
           </select>
         </label>
         <button id="apply-template" type="button">Brug skabelon</button>
@@ -496,10 +504,17 @@
   <details class="panel" id="plan-panel">
     <summary><span id="plan-title">Træningsplan – intervaller og pauser</span></summary>
     <div class="details-body">
+      <fieldset class="mode-switch">
+        <legend>Styring</legend>
+        <label><input type="radio" name="workout-mode" value="pulse" checked> Efter puls (pulsmål i % af max-puls)</label>
+        <label><input type="radio" name="workout-mode" value="power"> Efter watt (fast belastning)</label>
+      </fieldset>
+      <p id="mode-help" class="muted"></p>
       <div id="blocks"></div>
       <div class="actions">
         <button id="add-interval" type="button">+ Interval</button>
         <button id="add-break" type="button">+ Pause</button>
+        <button id="add-ramp" type="button">+ Rampe</button>
         <button id="add-repeat" type="button">+ Gentagne intervaller</button>
       </div>
     </div>
@@ -544,6 +559,8 @@
       var status = document.getElementById('status');
       var startButton = document.getElementById('start');
       var birthYearInput = document.getElementById('birth-year');
+      var workoutMode = 'pulse';
+      var chartGeometry = {left: 70, plotWidth: 805, plotHeight: 316};
       var targetUpButton = document.getElementById('target-up');
       var targetDownButton = document.getElementById('target-down');
       var workoutNameElement = document.getElementById('workout-name');
@@ -722,6 +739,18 @@
         });
       }
 
+      function currentBlockTarget(block, elapsed, plan) {
+        if (!block) return '';
+        if (block.type === 'interval') return 'Mål ' + block.pulse + ' bpm';
+        if (block.type === 'power') return 'Mål ' + block.power + ' W';
+        if (block.type === 'ramp') {
+          var value = Math.floor(block.start_value + (block.end_value - block.start_value) *
+            (elapsed - block.start) / (block.end - block.start) + 0.5);
+          return 'Mål ' + value + (block.kind === 'pulse' ? ' bpm' : ' W');
+        }
+        return (plan && plan.mode === 'power' ? 'Mål ' : 'Pause · ') + block.power + ' W';
+      }
+
       function updatePulseBadge(data) {
         var points = data && data.mode !== 'preview' ? data.points || [] : [];
         var live = Boolean(data && data.active && points.length);
@@ -736,12 +765,14 @@
           pulseTarget.textContent = data && data.active ? 'Venter på puls' : 'Ingen måling';
           return;
         }
+        if (data.limited) {
+          pulseTarget.textContent = 'Pulsgrænse · sænket';
+          return;
+        }
         var block = ((data.plan && data.plan.blocks) || []).filter(function (item) {
           return last.elapsed >= item.start && last.elapsed < item.end;
         })[0];
-        pulseTarget.textContent = !block ? ''
-          : block.type === 'interval' ? 'Mål ' + block.pulse + ' bpm'
-            : 'Pause · ' + block.power + ' W';
+        pulseTarget.textContent = currentBlockTarget(block, last.elapsed, data.plan);
       }
 
       function makeField(labelText, type, value, min, max, step, className) {
@@ -764,9 +795,11 @@
         var totalSeconds = 0;
         var lines = [];
         var selectedMax = selectedMaxPulse();
+        var powerMode = workoutMode === 'power';
 
         Array.prototype.forEach.call(rows, function (row, index) {
-          if (row.dataset.type === 'repeat') {
+          var type = row.dataset.type;
+          if (type === 'repeat') {
             var count = parseInt(row.querySelector('.count').value, 10);
             var workSeconds = parseInt(row.querySelector('.work-seconds').value, 10);
             var recoverySeconds = parseInt(row.querySelector('.recovery-seconds').value, 10);
@@ -777,27 +810,34 @@
             }
             lines.push(count + ' gentagelser · ' + workSeconds + ' sek. hårdt / ' +
               recoverySeconds + ' sek. let');
-          } else {
-            var minutesField = row.querySelector('.minutes');
-            var minutes = parseFloat(minutesField.value);
-            if (minutesField.validity.valid && isFinite(minutes) && minutes > 0) {
-              totalSeconds += Math.round(minutes * 60);
+            if (powerMode) {
+              lines.push('Mål: ' + row.querySelector('.work-power').value + ' W hårdt / ' +
+                row.querySelector('.recovery-power').value + ' W let');
+            } else if (selectedMax) {
+              lines.push('Mål: ' + row.querySelector('.work-percent').value + '% hårdt / ' +
+                row.querySelector('.recovery-percent').value + '% let');
             }
+            return;
           }
-          if (row.dataset.type === 'interval') {
-            var percentField = row.querySelector('.percent');
-            var percent = parseInt(percentField.value, 10);
-            if (selectedMax && percentField.validity.valid && isFinite(percent)) {
-              var target = Math.floor((selectedMax * percent + 50) / 100);
-              lines.push('Interval ' + (index + 1) + ': ' + target + ' bpm (' + percent + '%)');
+          var minutesField = row.querySelector('.minutes');
+          var minutes = parseFloat(minutesField.value);
+          if (minutesField.validity.valid && isFinite(minutes) && minutes > 0) {
+            totalSeconds += Math.round(minutes * 60);
+          }
+          if (type === 'interval' && powerMode) {
+            lines.push('Trin ' + (index + 1) + ': ' + row.querySelector('.power').value + ' W');
+          } else if (type === 'interval') {
+            var percent = parseInt(row.querySelector('.percent').value, 10);
+            if (selectedMax && isFinite(percent)) {
+              lines.push('Interval ' + (index + 1) + ': ' +
+                Math.floor((selectedMax * percent + 50) / 100) + ' bpm (' + percent + '%)');
             }
-          } else if (row.dataset.type === 'repeat') {
-            var workPercent = row.querySelector('.work-percent');
-            var recoveryPercent = row.querySelector('.recovery-percent');
-            if (selectedMax && workPercent.validity.valid && recoveryPercent.validity.valid) {
-              lines.push('Mål: ' + workPercent.value + '% hårdt / ' +
-                recoveryPercent.value + '% let');
-            }
+          } else if (type === 'ramp' && powerMode) {
+            lines.push('Rampe ' + row.querySelector('.start-power').value + '→' +
+              row.querySelector('.end-power').value + ' W');
+          } else if (type === 'ramp') {
+            lines.push('Rampe ' + row.querySelector('.start-percent').value + '→' +
+              row.querySelector('.end-percent').value + '%');
           }
         });
 
@@ -835,28 +875,42 @@
         })[0];
         var row = block && blocks.querySelectorAll('.block')[block.index];
         if (!row) return;
-        var fieldName, minimum, maximum, step;
+        var fieldNames, minimum, maximum, step, unit;
+        var pulseTarget = block.type === 'interval' || (block.type === 'ramp' && block.kind === 'pulse');
         if (block.type === 'interval') {
-          fieldName = block.repeat_phase === 'work' ? 'work-percent'
-            : block.repeat_phase === 'recovery' ? 'recovery-percent' : 'percent';
-          minimum = 1;
-          maximum = 100;
-          step = PULSE_STEP_PERCENT;
+          fieldNames = [block.repeat_phase === 'work' ? 'work-percent'
+            : block.repeat_phase === 'recovery' ? 'recovery-percent' : 'percent'];
+        } else if (block.type === 'power') {
+          fieldNames = [block.repeat_phase === 'work' ? 'work-power'
+            : block.repeat_phase === 'recovery' ? 'recovery-power' : 'power'];
+        } else if (block.type === 'ramp') {
+          fieldNames = block.kind === 'pulse' ? ['start-percent', 'end-percent']
+            : ['start-power', 'end-power'];
         } else {
-          fieldName = 'power';
-          minimum = 25;
-          maximum = 400;
-          step = POWER_STEP_WATTS;
+          fieldNames = ['power'];
         }
-        var field = row.querySelector('.' + fieldName);
-        var value = Math.max(minimum, Math.min(maximum,
-          (parseInt(field.value, 10) || 0) + direction * step));
-        setBlockField(block.index, fieldName, value);
+        if (pulseTarget) {
+          minimum = 1; maximum = 100; step = PULSE_STEP_PERCENT; unit = '%';
+        } else {
+          minimum = 25; maximum = block.type === 'break' ? 400 : 1000;
+          step = POWER_STEP_WATTS; unit = ' W';
+        }
+        var values = fieldNames.map(function (fieldName) {
+          var field = row.querySelector('.' + fieldName);
+          var value = Math.max(minimum, Math.min(maximum,
+            (parseInt(field.value, 10) || 0) + direction * step));
+          setBlockField(block.index, fieldName, value);
+          return value;
+        });
         status.className = 'success';
-        status.textContent = block.type === 'interval'
-          ? 'Nyt pulsmål: ' + Math.floor((plan.max_pulse * value + 50) / 100) +
-            ' bpm (' + value + ' %). Slår igennem ved næste regulering.'
-          : 'Ny belastning: ' + value + ' W.';
+        if (block.type === 'interval') {
+          status.textContent = 'Nyt pulsmål: ' + Math.floor((plan.max_pulse * values[0] + 50) / 100) +
+            ' bpm (' + values[0] + ' %). Slår igennem ved næste regulering.';
+        } else if (block.type === 'ramp') {
+          status.textContent = 'Ny rampe: ' + values[0] + '→' + values[1] + unit + '.';
+        } else {
+          status.textContent = 'Ny belastning: ' + values[0] + ' W.';
+        }
       }
 
       targetUpButton.addEventListener('click', function () { adjustCurrentTarget(1); });
@@ -919,79 +973,99 @@
 
       function chartPlanFromForm() {
         var maximum = selectedMaxPulse();
-        var pulseUnit = maximum ? 'bpm' : 'percent';
-        var chartMaximum = maximum || 100;
+        var powerMode = workoutMode === 'power';
+        var pulseValue = function (percent) {
+          return maximum ? Math.floor((maximum * percent + 50) / 100) : percent;
+        };
+        var number = function (row, className) {
+          var field = row.querySelector('.' + className);
+          return field && field.validity.valid ? parseFloat(field.value) : NaN;
+        };
         var elapsed = 0;
         var chartBlocks = [];
+        var add = function (entry, duration) {
+          entry.start = elapsed;
+          entry.end = elapsed + duration;
+          chartBlocks.push(entry);
+          elapsed += duration;
+        };
         Array.prototype.forEach.call(blocks.querySelectorAll('.block'), function (row, index) {
-          if (row.dataset.type === 'repeat') {
-            var count = parseInt(row.querySelector('.count').value, 10);
-            var workSeconds = parseInt(row.querySelector('.work-seconds').value, 10);
-            var recoverySeconds = parseInt(row.querySelector('.recovery-seconds').value, 10);
-            var workPercent = parseInt(row.querySelector('.work-percent').value, 10);
-            var recoveryPercent = parseInt(row.querySelector('.recovery-percent').value, 10);
-            if (!row.querySelector('.count').validity.valid ||
-                !row.querySelector('.work-seconds').validity.valid ||
-                !row.querySelector('.recovery-seconds').validity.valid ||
-                !row.querySelector('.work-percent').validity.valid ||
-                !row.querySelector('.recovery-percent').validity.valid) return;
+          var type = row.dataset.type;
+          if (type === 'repeat') {
+            var count = number(row, 'count');
+            var phases = ['work', 'recovery'].map(function (phase) {
+              return {
+                phase: phase,
+                seconds: number(row, phase + '-seconds'),
+                value: number(row, phase + (powerMode ? '-power' : '-percent'))
+              };
+            });
+            if (!isFinite(count) || phases.some(function (phase) {
+              return !isFinite(phase.seconds) || !isFinite(phase.value);
+            })) return;
             for (var repeatIndex = 0; repeatIndex < count; repeatIndex += 1) {
-              [
-                {duration: workSeconds, percent: workPercent, phase: 'work'},
-                {duration: recoverySeconds, percent: recoveryPercent, phase: 'recovery'}
-              ].forEach(function (phase) {
-                chartBlocks.push({
-                  type: 'interval',
-                  index: index,
-                  draggable: false,
-                  repeat_phase: phase.phase,
-                  start: elapsed,
-                  end: elapsed + phase.duration,
-                  pulse: maximum
-                    ? Math.floor((maximum * phase.percent + 50) / 100)
-                    : phase.percent,
-                  percent: phase.percent
-                });
-                elapsed += phase.duration;
+              phases.forEach(function (phase) {
+                var entry = powerMode
+                  ? {type: 'power', power: phase.value}
+                  : {type: 'interval', pulse: pulseValue(phase.value), percent: phase.value};
+                entry.index = index;
+                entry.draggable = false;
+                entry.repeat_phase = phase.phase;
+                add(entry, phase.seconds);
               });
             }
             return;
           }
-          var minutes = parseFloat(row.querySelector('.minutes').value);
+          var minutes = number(row, 'minutes');
           if (!isFinite(minutes) || minutes <= 0) return;
           var duration = Math.round(minutes * 60);
-          if (row.dataset.type === 'interval') {
-            var percentField = row.querySelector('.percent');
-            var percent = parseInt(percentField.value, 10);
-            if (!percentField.validity.valid) return;
-            chartBlocks.push({
-              type: 'interval',
-              index: index,
-              start: elapsed,
-              end: elapsed + duration,
-              pulse: maximum ? Math.floor((maximum * percent + 50) / 100) : percent,
-              percent: percent
-            });
+          var entry;
+          if (type === 'interval' && powerMode) {
+            if (!isFinite(number(row, 'power'))) return;
+            entry = {type: 'power', power: number(row, 'power')};
+          } else if (type === 'interval') {
+            var percent = number(row, 'percent');
+            if (!isFinite(percent)) return;
+            entry = {type: 'interval', pulse: pulseValue(percent), percent: percent};
+          } else if (type === 'ramp') {
+            var first = number(row, powerMode ? 'start-power' : 'start-percent');
+            var last = number(row, powerMode ? 'end-power' : 'end-percent');
+            if (!isFinite(first) || !isFinite(last)) return;
+            entry = powerMode
+              ? {type: 'ramp', kind: 'power', start_value: first, end_value: last}
+              : {type: 'ramp', kind: 'pulse', start_percent: first, end_percent: last,
+                 start_value: pulseValue(first), end_value: pulseValue(last)};
           } else {
-            var powerField = row.querySelector('.power');
-            var power = parseInt(powerField.value, 10);
-            if (!powerField.validity.valid) return;
-            chartBlocks.push({
-              type: 'break',
-              index: index,
-              start: elapsed,
-              end: elapsed + duration,
-              power: power
-            });
+            if (!isFinite(number(row, 'power'))) return;
+            entry = {type: 'break', power: number(row, 'power')};
           }
-          elapsed += duration;
+          entry.index = index;
+          add(entry, duration);
         });
         return {
-          max_pulse: chartMaximum,
-          pulse_unit: pulseUnit,
+          mode: workoutMode,
+          max_pulse: maximum || (powerMode ? null : 100),
+          pulse_unit: maximum || powerMode ? 'bpm' : 'percent',
           duration: elapsed,
           blocks: chartBlocks
         };
+      }
+
+      function pulseAxisMax(plan) {
+        if (plan.pulse_unit === 'percent') return 100;
+        return Math.max(200, Math.ceil(((plan.max_pulse || 190) + 10) / 50) * 50);
+      }
+
+      function powerAxisMax(plan) {
+        var highest = 0;
+        plan.blocks.forEach(function (block) {
+          if (block.type === 'power' || block.type === 'break') {
+            highest = Math.max(highest, block.power);
+          } else if (block.type === 'ramp' && block.kind === 'power') {
+            highest = Math.max(highest, block.start_value, block.end_value);
+          }
+        });
+        return Math.max(200, Math.ceil((highest + 25) / 50) * 50);
       }
 
       function svgElement(name, attributes, text) {
@@ -1030,40 +1104,69 @@
           return;
         }
 
+        var powerMode = plan.mode === 'power';
+        document.getElementById('legend-pulse').hidden = powerMode;
+        document.getElementById('legend-pause').hidden = powerMode;
+        document.getElementById('legend-watt').hidden = !powerMode;
+        document.getElementById('chart-title').textContent = powerMode
+          ? 'Belastning og puls gennem træningen' : 'Puls gennem træningen';
+        chartHelp.textContent = powerMode
+          ? 'Træk i toppen af en orange søjle for at ændre belastningen, eller i en orange diamant ' +
+            'for at ændre varigheden. I gentagelser ændres alle søjler af samme slags. ' +
+            'Under træning slår ændringer igennem ved næste regulering.'
+          : 'Træk i en blå mållinje for at ændre pulsen, eller i en orange diamant for at ændre ' +
+            'varigheden. I gentagelser ændres alle søjler af samme slags. ' +
+            'Under træning slår ændringer igennem ved næste regulering.';
         var width = 900;
         var height = 400;
         var left = 70;
-        var right = 875;
+        // A watt chart needs room on the right for the pulse axis.
+        var right = powerMode ? 835 : 875;
         var top = 24;
         var bottom = 340;
         var plotWidth = right - left;
         var plotHeight = bottom - top;
+        chartGeometry = {left: left, plotWidth: plotWidth, plotHeight: plotHeight};
         // While a duration handle is dragged the time scale stays put so the handle follows the pointer.
         var timeScale = chartDrag && chartDrag.type === 'duration'
           ? Math.max(chartDrag.scaleDuration, plan.duration)
           : plan.duration;
-        var percentScale = plan.pulse_unit === 'percent';
-        var maxBpm = percentScale
-          ? 100
-          : Math.max(200, Math.ceil((plan.max_pulse + 10) / 50) * 50);
+        var percentScale = !powerMode && plan.pulse_unit === 'percent';
+        var maxBpm = pulseAxisMax(plan);
+        var maxWatt = powerAxisMax(plan);
+        if (chartDrag && chartDrag.kind === 'power') maxWatt = Math.max(maxWatt, chartDrag.maxScale);
         var x = function (seconds) { return left + seconds / timeScale * plotWidth; };
         var y = function (bpm) { return bottom - bpm / maxBpm * plotHeight; };
+        var yWatt = function (watts) { return bottom - watts / maxWatt * plotHeight; };
 
-        pulseChart.appendChild(svgElement('title', {}, 'Ønsket og målt puls under træningen'));
-        pulseChart.appendChild(svgElement('desc', {},
-          'Søjler viser intervalmål i bpm, røde punkter viser målt puls og en stiplet streg viser forløbet.'));
+        pulseChart.appendChild(svgElement('title', {}, powerMode
+          ? 'Planlagt belastning og målt puls under træningen'
+          : 'Ønsket og målt puls under træningen'));
+        pulseChart.appendChild(svgElement('desc', {}, powerMode
+          ? 'Søjler viser belastningen i watt, den røde linje viser målt puls på højre akse.'
+          : 'Søjler viser intervalmål i bpm, røde punkter viser målt puls og en stiplet streg viser forløbet.'));
 
-        var pulseStep = percentScale ? 20 : 50;
-        for (var pulse = 0; pulse <= maxBpm; pulse += pulseStep) {
-          var pulseY = y(pulse);
+        var axisMax = powerMode ? maxWatt : maxBpm;
+        var axisStep = powerMode ? (maxWatt > 500 ? 100 : 50) : (percentScale ? 20 : 50);
+        var axisY = powerMode ? yWatt : y;
+        for (var level = 0; level <= axisMax; level += axisStep) {
+          var levelY = axisY(level);
           pulseChart.appendChild(svgElement('line', {
-            x1: left, x2: right, y1: pulseY, y2: pulseY,
+            x1: left, x2: right, y1: levelY, y2: levelY,
             stroke: '#dbe2e8', 'stroke-width': 1
           }));
           pulseChart.appendChild(svgElement('text', {
-            x: left - 12, y: pulseY + 4, 'text-anchor': 'end',
+            x: left - 12, y: levelY + 4, 'text-anchor': 'end',
             fill: '#526271', 'font-size': 12
-          }, String(pulse)));
+          }, String(level)));
+        }
+        if (powerMode) {
+          for (var bpm = 0; bpm <= maxBpm; bpm += 50) {
+            pulseChart.appendChild(svgElement('text', {
+              x: right + 8, y: y(bpm) + 4, 'text-anchor': 'start',
+              fill: '#bf3434', 'font-size': 12
+            }, String(bpm)));
+          }
         }
 
         var tickStep = timeTickStep(timeScale);
@@ -1079,28 +1182,59 @@
           }, formatTickTime(tickTime, tickStep)));
         }
 
+        var pulseFill = '#4a90c2';
+        var pulseLine = '#24628f';
+        var wattFill = '#e8a23c';
+        var wattLine = '#b56d12';
         plan.blocks.forEach(function (block) {
           var barX = x(block.start);
           var barWidth = Math.max(1, x(block.end) - barX);
-          if (block.type === 'interval') {
-            var barY = y(block.pulse);
+          var isWatt = block.type === 'power' || (block.type === 'break' && powerMode);
+          if (block.type === 'interval' || isWatt) {
+            var barY = isWatt ? yWatt(block.power) : y(block.pulse);
             pulseChart.appendChild(svgElement('rect', {
               x: barX, y: barY, width: barWidth, height: Math.max(0, bottom - barY),
-              fill: '#4a90c2', opacity: .48
+              fill: isWatt ? wattFill : pulseFill,
+              opacity: block.repeat_phase === 'recovery' ? .26 : .48
             }));
             pulseChart.appendChild(svgElement('line', {
               x1: barX, x2: barX + barWidth, y1: barY, y2: barY,
-              stroke: '#24628f', 'stroke-width': 2
+              stroke: isWatt ? wattLine : pulseLine, 'stroke-width': 2
             }));
-            if (editable && block.draggable !== false) {
+            if (isWatt && barWidth > 40) {
+              pulseChart.appendChild(svgElement('text', {
+                x: barX + barWidth / 2, y: barY - 6,
+                'text-anchor': 'middle', fill: wattLine, 'font-size': 11
+              }, block.power + ' W'));
+            }
+            if (editable && (block.draggable !== false || block.repeat_phase)) {
               pulseChart.appendChild(svgElement('line', {
                 x1: barX, x2: barX + barWidth, y1: barY, y2: barY,
                 stroke: 'transparent', 'stroke-width': 18, 'pointer-events': 'stroke',
-                'data-drag-type': 'target', 'data-block-index': block.index,
-                'aria-label': 'Træk for at ændre intervallets ønskede puls',
+                'data-drag-type': 'target', 'data-drag-kind': isWatt ? 'power' : 'pulse',
+                'data-block-index': block.index,
+                'data-repeat-phase': block.repeat_phase || '',
+                'aria-label': block.repeat_phase
+                  ? 'Træk for at ændre alle ' + (block.repeat_phase === 'work' ? 'hårde' : 'lette') +
+                    ' intervaller i gentagelsen'
+                  : isWatt ? 'Træk for at ændre belastningen'
+                    : 'Træk for at ændre intervallets ønskede puls',
                 style: 'cursor:ns-resize'
               }));
             }
+          } else if (block.type === 'ramp') {
+            var rampY = block.kind === 'power' ? yWatt : y;
+            var startY = rampY(block.start_value);
+            var endY = rampY(block.end_value);
+            pulseChart.appendChild(svgElement('polygon', {
+              points: barX + ',' + bottom + ' ' + barX + ',' + startY + ' ' +
+                (barX + barWidth) + ',' + endY + ' ' + (barX + barWidth) + ',' + bottom,
+              fill: block.kind === 'power' ? wattFill : pulseFill, opacity: .48
+            }));
+            pulseChart.appendChild(svgElement('line', {
+              x1: barX, x2: barX + barWidth, y1: startY, y2: endY,
+              stroke: block.kind === 'power' ? wattLine : pulseLine, 'stroke-width': 2
+            }));
           } else {
             pulseChart.appendChild(svgElement('rect', {
               x: barX, y: top, width: barWidth, height: plotHeight,
@@ -1143,9 +1277,22 @@
           x1: left, x2: right, y1: bottom, y2: bottom,
           stroke: '#526271', 'stroke-width': 1.5
         }));
+        if (powerMode) {
+          pulseChart.appendChild(svgElement('line', {
+            x1: right, x2: right, y1: top, y2: bottom,
+            stroke: '#bf3434', 'stroke-width': 1, opacity: .6
+          }));
+        }
         if (editable) {
+          var phaseHandles = {};
           plan.blocks.forEach(function (block) {
-            if (block.draggable === false) return;
+            if (block.repeat_phase) {
+              var phaseKey = block.index + ':' + block.repeat_phase;
+              if (phaseHandles[phaseKey]) return;
+              phaseHandles[phaseKey] = true;
+            } else if (block.draggable === false) {
+              return;
+            }
             var boundaryX = x(block.end);
             pulseChart.appendChild(svgElement('line', {
               x1: boundaryX, x2: boundaryX, y1: top, y2: bottom,
@@ -1163,7 +1310,11 @@
               cx: boundaryX, cy: bottom, r: 13,
               fill: 'transparent', 'pointer-events': 'all',
               'data-drag-type': 'duration', 'data-block-index': block.index,
-              'aria-label': 'Træk for at ændre sessionens varighed',
+              'data-repeat-phase': block.repeat_phase || '',
+              'aria-label': block.repeat_phase
+                ? 'Træk for at ændre varigheden af alle ' +
+                  (block.repeat_phase === 'work' ? 'hårde' : 'lette') + ' intervaller'
+                : 'Træk for at ændre sessionens varighed',
               style: 'cursor:ew-resize'
             }));
           });
@@ -1172,7 +1323,14 @@
           x: 18, y: top + plotHeight / 2,
           transform: 'rotate(-90 18 ' + (top + plotHeight / 2) + ')',
           'text-anchor': 'middle', fill: '#263442', 'font-size': 13
-        }, percentScale ? 'Puls (% af max)' : 'Puls (bpm)'));
+        }, powerMode ? 'Belastning (W)' : percentScale ? 'Puls (% af max)' : 'Puls (bpm)'));
+        if (powerMode) {
+          pulseChart.appendChild(svgElement('text', {
+            x: 892, y: top + plotHeight / 2,
+            transform: 'rotate(90 892 ' + (top + plotHeight / 2) + ')',
+            'text-anchor': 'middle', fill: '#bf3434', 'font-size': 13
+          }, 'Målt puls (bpm)'));
+        }
         pulseChart.appendChild(svgElement('text', {
           x: left + plotWidth / 2, y: height - 8,
           'text-anchor': 'middle', fill: '#263442', 'font-size': 13
@@ -1182,10 +1340,16 @@
           chartMessage.textContent = data.active
             ? 'Livedemo: målingerne er simulerede. Redigering gælder træningsplanen, ikke den igangværende demo.'
             : 'Livedemo afsluttet. De røde målinger er simulerede, og planen kan redigeres.';
+        } else if (data && data.mode === 'real' && data.active && data.limited) {
+          chartMessage.textContent = 'Pulsgrænsen er nået, så belastningen sænkes midlertidigt, ' +
+            'indtil pulsen falder igen.';
         } else if (data && data.mode === 'real') {
           chartMessage.textContent = data.active
             ? 'Live: målt puls registreres cirka én gang i sekundet.'
             : 'Træningen er afsluttet. Grafen viser målingerne, og planen kan redigeres.';
+        } else if (powerMode) {
+          chartMessage.textContent = 'Grafen viser den planlagte belastning i watt. ' +
+            'Målt puls vises på højre akse under træningen.';
         } else if (percentScale) {
           chartMessage.textContent = 'Grafen viser dine pulsmål i procent af max. Vælg max-puls for at se bpm.';
         } else {
@@ -1219,21 +1383,33 @@
         if (!row || !plan || !plan.duration) return;
         var position = chartPosition(event);
         var dragType = handle.getAttribute('data-drag-type');
+        var repeatPhase = handle.getAttribute('data-repeat-phase');
+        var minutesField = row.querySelector('.minutes');
         chartDrag = {
           type: dragType,
+          kind: handle.getAttribute('data-drag-kind'),
           index: index,
-          startClientX: event.clientX,
           startY: position.y,
-          maxPulse: plan.max_pulse,
-          maxBpm: Math.max(200, Math.ceil((plan.max_pulse + 10) / 50) * 50),
-          plotHeight: 316,
-          minutes: parseFloat(row.querySelector('.minutes').value)
+          minutes: minutesField ? parseFloat(minutesField.value) : 0
         };
-        if (dragType === 'target') {
-          chartDrag.percent = parseInt(row.querySelector('.percent').value, 10);
+        if (dragType === 'target' && chartDrag.kind === 'power') {
+          // In a repeat group the work or recovery load is shared by all its bars.
+          chartDrag.field = repeatPhase ? repeatPhase + '-power' : 'power';
+          chartDrag.startValue = parseInt(row.querySelector('.' + chartDrag.field).value, 10);
+          chartDrag.maxScale = powerAxisMax(plan);
+        } else if (dragType === 'target') {
+          chartDrag.field = repeatPhase ? repeatPhase + '-percent' : 'percent';
+          chartDrag.maxPulse = plan.max_pulse;
+          chartDrag.maxScale = pulseAxisMax(plan);
+          chartDrag.percent = parseInt(row.querySelector('.' + chartDrag.field).value, 10);
           chartDrag.pulse = Math.floor(
             (plan.max_pulse * chartDrag.percent + 50) / 100);
         } else {
+          if (repeatPhase) {
+            chartDrag.secondsField = repeatPhase + '-seconds';
+            chartDrag.startSeconds = parseInt(
+              row.querySelector('.' + chartDrag.secondsField).value, 10);
+          }
           chartDrag.startX = position.x;
           chartDrag.scaleDuration = Math.max(plan.duration * 1.5, plan.duration + 5 * 60);
           chartDrag.otherMinutes = 0;
@@ -1258,15 +1434,33 @@
       pulseChart.addEventListener('pointermove', function (event) {
         if (!chartDrag) return;
         var position = chartPosition(event);
-        if (chartDrag.type === 'target') {
+        var plotHeight = chartGeometry.plotHeight;
+        if (chartDrag.type === 'target' && chartDrag.kind === 'power') {
+          var desiredPower = chartDrag.startValue -
+            (position.y - chartDrag.startY) * chartDrag.maxScale / plotHeight;
+          var power = Math.max(25, Math.min(1000, Math.round(desiredPower / 5) * 5));
+          setBlockField(chartDrag.index, chartDrag.field, power);
+        } else if (chartDrag.type === 'target') {
           var desiredPulse = chartDrag.pulse -
-            (position.y - chartDrag.startY) * chartDrag.maxBpm / chartDrag.plotHeight;
+            (position.y - chartDrag.startY) * chartDrag.maxScale / plotHeight;
           var percent = Math.max(1, Math.min(100,
             Math.round(desiredPulse / chartDrag.maxPulse * 100)));
-          setBlockField(chartDrag.index, 'percent', percent);
+          setBlockField(chartDrag.index, chartDrag.field, percent);
         } else {
-          // Same plot width as renderChart (805), so the handle moves with the pointer.
-          var deltaSeconds = (position.x - chartDrag.startX) / 805 * chartDrag.scaleDuration;
+          // Same plot width as renderChart, so the handle moves with the pointer.
+          var deltaSeconds = (position.x - chartDrag.startX) / chartGeometry.plotWidth *
+            chartDrag.scaleDuration;
+          if (chartDrag.secondsField) {
+            // A repeat phase: 5-second steps, the same for every repetition.
+            var seconds = Math.max(5, Math.min(3600,
+              chartDrag.startSeconds + Math.round(deltaSeconds / 5) * 5));
+            if (seconds !== parseInt(blocks.querySelectorAll('.block')[chartDrag.index]
+                .querySelector('.' + chartDrag.secondsField).value, 10)) {
+              setBlockField(chartDrag.index, chartDrag.secondsField, seconds);
+            }
+            event.preventDefault();
+            return;
+          }
           // Snap to half minutes, never shorter than 30 seconds.
           var duration = Math.max(0.5, Math.min(
             720 - chartDrag.otherMinutes, chartDrag.minutes + Math.round(deltaSeconds / 30) / 2));
@@ -1347,15 +1541,18 @@
 
       function addBlock(type, values) {
         values = values || {};
+        var powerMode = workoutMode === 'power';
         var row = document.createElement('fieldset');
         row.className = 'block';
         row.dataset.type = type;
         if (values.label) row.dataset.label = values.label;
 
         var title = document.createElement('h3');
-        title.textContent = values.label || (type === 'interval' ? 'Arbejdsinterval'
-          : type === 'repeat' ? 'Gentagne høj-/lavintensitetsintervaller'
-            : 'Pause med lav belastning');
+        title.textContent = values.label || (
+          type === 'repeat' ? 'Gentagne høj-/lavintensitetsintervaller'
+            : type === 'ramp' ? 'Rampe'
+              : type === 'break' ? 'Pause med lav belastning'
+                : powerMode ? 'Trin med fast belastning' : 'Arbejdsinterval');
         row.appendChild(title);
 
         var fields = document.createElement('div');
@@ -1365,12 +1562,31 @@
             values.count || 13, 1, 100, 1, 'count'));
           fields.appendChild(makeField('Hårdt interval (sek.)', 'number',
             values.work_seconds || 30, 1, 3600, 1, 'work-seconds'));
-          fields.appendChild(makeField('Hårdt mål (% af max)', 'number',
-            values.work_percent || 85, 1, 100, 1, 'work-percent'));
+          fields.appendChild(powerMode
+            ? makeField('Hårdt (W)', 'number', values.work_power || 250, 25, 1000, 1, 'work-power')
+            : makeField('Hårdt mål (% af max)', 'number',
+              values.work_percent || 85, 1, 100, 1, 'work-percent'));
           fields.appendChild(makeField('Let interval (sek.)', 'number',
             values.recovery_seconds || 30, 1, 3600, 1, 'recovery-seconds'));
-          fields.appendChild(makeField('Let mål (% af max)', 'number',
-            values.recovery_percent || 60, 1, 100, 1, 'recovery-percent'));
+          fields.appendChild(powerMode
+            ? makeField('Let (W)', 'number', values.recovery_power || 120, 25, 1000, 1, 'recovery-power')
+            : makeField('Let mål (% af max)', 'number',
+              values.recovery_percent || 60, 1, 100, 1, 'recovery-percent'));
+        } else if (type === 'ramp') {
+          if (powerMode) {
+            fields.appendChild(makeField('Start (W)', 'number',
+              values.start_power || 100, 25, 1000, 1, 'start-power'));
+            fields.appendChild(makeField('Slut (W)', 'number',
+              values.end_power || 200, 25, 1000, 1, 'end-power'));
+          } else {
+            fields.appendChild(makeField('Start (% af max)', 'number',
+              values.start_percent || 55, 1, 100, 1, 'start-percent'));
+            fields.appendChild(makeField('Slut (% af max)', 'number',
+              values.end_percent || 75, 1, 100, 1, 'end-percent'));
+          }
+        } else if (type === 'interval' && powerMode) {
+          fields.appendChild(makeField('Belastning (W)', 'number',
+            values.power || 150, 25, 1000, 1, 'power'));
         } else if (type === 'interval') {
           fields.appendChild(makeField('Ønsket puls (% af max)', 'number',
             values.percent || 70, 1, 100, 1, 'percent'));
@@ -1380,7 +1596,7 @@
         }
         if (type !== 'repeat') {
           fields.appendChild(makeField('Varighed (min)', 'number',
-            values.minutes || (type === 'interval' ? 5 : 2), 0.5, 720, 0.5, 'minutes'));
+            values.minutes || (type === 'break' ? 2 : 5), 0.5, 720, 0.5, 'minutes'));
         }
         row.appendChild(fields);
 
@@ -1422,8 +1638,38 @@
         updateSummary();
       }
 
+      function setWorkoutMode(mode, convertBlocks) {
+        var previous = convertBlocks ? readBlocks() : null;
+        workoutMode = mode === 'power' ? 'power' : 'pulse';
+        document.querySelector('input[name="workout-mode"][value="' + workoutMode + '"]').checked = true;
+        var powerMode = workoutMode === 'power';
+        document.getElementById('add-break').hidden = powerMode;
+        document.getElementById('add-interval').textContent = powerMode ? '+ Trin' : '+ Interval';
+        document.getElementById('mode-help').textContent = powerMode
+          ? 'Belastningen følger planen. Kommer pulsen over 95 % af max-puls, sænkes den automatisk.'
+          : 'Belastningen reguleres, så pulsen holder sig på målet.';
+        if (previous) {
+          // Durations and repeats are kept; targets get the new mode's defaults,
+          // except that a pause becomes a watt step at the same load.
+          blocks.textContent = '';
+          blocks.classList.remove('has-blocks');
+          previous.forEach(function (block) {
+            var values = {label: block.label, minutes: block.minutes, count: block.count,
+              work_seconds: block.work_seconds, recovery_seconds: block.recovery_seconds};
+            var type = block.type;
+            if (type === 'break' && powerMode) {
+              type = 'interval';
+              values.power = block.power;
+            }
+            addBlock(type, values);
+          });
+        }
+        updateSummary();
+      }
+
       function workoutModified() {
-        return Boolean(workoutName) && JSON.stringify(readBlocks()) !== loadedBlocksSignature;
+        return Boolean(workoutName) &&
+          JSON.stringify([workoutMode, readBlocks()]) !== loadedBlocksSignature;
       }
 
       function workoutLabel() {
@@ -1433,7 +1679,7 @@
 
       function setWorkoutName(name) {
         workoutName = name || null;
-        loadedBlocksSignature = workoutName ? JSON.stringify(readBlocks()) : null;
+        loadedBlocksSignature = workoutName ? JSON.stringify([workoutMode, readBlocks()]) : null;
         updateWorkoutName();
       }
 
@@ -1459,6 +1705,7 @@
         var pulseSource = document.querySelector('input[name="pulse-source"]:checked').value;
         return {
           name: workoutLabel(),
+          mode: workoutMode,
           max_pulse_source: useBirthYear ? 'age' : 'manual',
           max_pulse: useBirthYear ? null : parseInt(maxPulse.value, 10),
           age: useBirthYear ? selectedAge() : null,
@@ -1471,24 +1718,38 @@
       }
 
       function readBlocks() {
-        var rows = blocks.querySelectorAll('.block');
+        var powerMode = workoutMode === 'power';
+        var integer = function (row, className) {
+          return parseInt(row.querySelector('.' + className).value, 10);
+        };
         var items = [];
-        Array.prototype.forEach.call(rows, function (row) {
+        Array.prototype.forEach.call(blocks.querySelectorAll('.block'), function (row) {
           var item = {type: row.dataset.type};
           if (row.dataset.label) item.label = row.dataset.label;
           if (item.type === 'repeat') {
-            item.count = parseInt(row.querySelector('.count').value, 10);
-            item.work_seconds = parseInt(row.querySelector('.work-seconds').value, 10);
-            item.work_percent = parseInt(row.querySelector('.work-percent').value, 10);
-            item.recovery_seconds = parseInt(row.querySelector('.recovery-seconds').value, 10);
-            item.recovery_percent = parseInt(row.querySelector('.recovery-percent').value, 10);
+            item.count = integer(row, 'count');
+            item.work_seconds = integer(row, 'work-seconds');
+            item.recovery_seconds = integer(row, 'recovery-seconds');
+            if (powerMode) {
+              item.work_power = integer(row, 'work-power');
+              item.recovery_power = integer(row, 'recovery-power');
+            } else {
+              item.work_percent = integer(row, 'work-percent');
+              item.recovery_percent = integer(row, 'recovery-percent');
+            }
           } else {
             item.minutes = parseFloat(row.querySelector('.minutes').value);
           }
-          if (item.type === 'interval') {
-            item.percent = parseInt(row.querySelector('.percent').value, 10);
-          } else if (item.type === 'break') {
-            item.power = parseInt(row.querySelector('.power').value, 10);
+          if (item.type === 'interval' && !powerMode) {
+            item.percent = integer(row, 'percent');
+          } else if (item.type === 'interval' || item.type === 'break') {
+            item.power = integer(row, 'power');
+          } else if (item.type === 'ramp' && powerMode) {
+            item.start_power = integer(row, 'start-power');
+            item.end_power = integer(row, 'end-power');
+          } else if (item.type === 'ramp') {
+            item.start_percent = integer(row, 'start-percent');
+            item.end_percent = integer(row, 'end-percent');
           }
           items.push(item);
         });
@@ -1591,6 +1852,7 @@
       function applyPreset(preset) {
         blocks.textContent = '';
         blocks.classList.remove('has-blocks');
+        setWorkoutMode(preset.plan.mode || 'pulse', false);
         preset.plan.blocks.forEach(function (block) {
           addBlock(block.type, block);
         });
@@ -1719,7 +1981,7 @@
           body: JSON.stringify({
             profile: activeProfile,
             name: presetName.value,
-            plan: {blocks: plan.blocks}
+            plan: {mode: plan.mode, blocks: plan.blocks}
           })
         }).then(function (response) {
           return response.json().then(function (data) {
@@ -1763,7 +2025,7 @@
         status.className = '';
         status.textContent = '';
         var plan = getPlan();
-        if (!requireMaxPulse()) return;
+        if (workoutMode === 'pulse' && !requireMaxPulse()) return;
         if (!plan.blocks.length) {
           status.className = 'error';
           status.textContent = 'Tilføj mindst ét træningselement før livedemo.';
@@ -1810,6 +2072,9 @@
           deviceTypeSelect.disabled = busy;
           document.getElementById('device').disabled = busy;
           userProfile.disabled = busy;
+          document.querySelectorAll('input[name="workout-mode"]').forEach(function (radio) {
+            radio.disabled = busy;
+          });
           maxPulse.disabled = busy || maxPulseSource() === 'birth_year';
           birthYearInput.disabled = busy || maxPulseSource() !== 'birth_year';
           document.querySelectorAll('input[name="max-pulse-source"]').forEach(function (radio) {
@@ -1869,21 +2134,57 @@
       document.getElementById('add-repeat').addEventListener('click', function () {
         addBlock('repeat');
       });
+      document.getElementById('add-ramp').addEventListener('click', function () {
+        addBlock('ramp');
+      });
+      Array.prototype.forEach.call(
+        document.querySelectorAll('input[name="workout-mode"]'),
+        function (radio) {
+          radio.addEventListener('change', function () {
+            if (this.checked) setWorkoutMode(this.value, true);
+          });
+        }
+      );
+      setWorkoutMode('pulse', false);
       document.getElementById('apply-template').addEventListener('click', function () {
         var templates = {
-          'hiit-30-30': [
-            {type: 'interval', label: 'Opvarmning', minutes: 4, percent: 55},
-            {
-              type: 'repeat',
-              label: 'Gentagne høj-/lavintensitetsintervaller',
-              count: 13,
-              work_seconds: 30,
-              work_percent: 85,
-              recovery_seconds: 30,
-              recovery_percent: 60
-            },
-            {type: 'break', label: 'Nedkøling', minutes: 3, power: 25}
-          ]
+          'hiit-30-30': {
+            mode: 'pulse',
+            message: 'HIIT-skabelonen er klar: 4 min opvarmning, 13 × 30/30 sek. og 3 min nedkøling.',
+            blocks: [
+              {type: 'interval', label: 'Opvarmning', minutes: 4, percent: 55},
+              {
+                type: 'repeat',
+                label: 'Gentagne høj-/lavintensitetsintervaller',
+                count: 13,
+                work_seconds: 30,
+                work_percent: 85,
+                recovery_seconds: 30,
+                recovery_percent: 60
+              },
+              {type: 'break', label: 'Nedkøling', minutes: 3, power: 25}
+            ]
+          },
+          'vo2max-5x5': {
+            mode: 'power',
+            message: 'VO₂ Max-skabelonen er klar: 9 min opvarmning, 5 × (1 min ved 285 W + ' +
+              '1¼ min ved 130 W) og 8 min nedkøling. Tilpas watt til din form.',
+            blocks: [
+              {type: 'ramp', label: 'Opvarmning', minutes: 5.5, start_power: 100, end_power: 168},
+              {type: 'interval', label: 'Opvarmning, åbner', minutes: 1.5, power: 220},
+              {type: 'interval', label: 'Let inden intervallerne', minutes: 2, power: 125},
+              {
+                type: 'repeat',
+                label: 'VO₂ max-intervaller',
+                count: 5,
+                work_seconds: 60,
+                work_power: 285,
+                recovery_seconds: 75,
+                recovery_power: 130
+              },
+              {type: 'ramp', label: 'Nedkøling', minutes: 8, start_power: 150, end_power: 105}
+            ]
+          }
         };
         var selectedTemplate = templates[builtinTemplate.value];
         if (!selectedTemplate) {
@@ -1893,13 +2194,14 @@
         }
         blocks.textContent = '';
         blocks.classList.remove('has-blocks');
-        selectedTemplate.forEach(function (block) {
+        setWorkoutMode(selectedTemplate.mode, false);
+        selectedTemplate.blocks.forEach(function (block) {
           addBlock(block.type, block);
         });
         presetName.value = '';
         setWorkoutName(builtinTemplate.options[builtinTemplate.selectedIndex].textContent);
         status.className = 'success';
-        status.textContent = 'HIIT-skabelonen er klar: 4 min opvarmning, 13 × 30/30 sek. og 3 min nedkøling. Du kan starte den uden at gemme.';
+        status.textContent = selectedTemplate.message + ' Du kan starte den uden at gemme.';
         resetChart().catch(function (error) {
           status.className = 'error';
           status.textContent = error.message;
@@ -2056,7 +2358,7 @@
           status.textContent = 'Søg efter og vælg dit smartwatch først.';
           return;
         }
-        if (!requireMaxPulse()) return;
+        if (workoutMode === 'pulse' && !requireMaxPulse()) return;
         if (!plan.blocks.length) {
           status.className = 'error';
           status.textContent = 'Tilføj mindst ét træningselement.';

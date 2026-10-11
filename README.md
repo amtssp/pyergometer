@@ -62,8 +62,12 @@ unsaved form so that one person's workout history is not shown for another.
 The shared workout template list includes a 20-minute HIIT session: 4 minutes
 at 55% of maximum pulse, 13 repetitions of 30 seconds at 85% plus 30 seconds
 at 60%, then 3 minutes at the ergometer's minimum 25 W. The shared template named
-``HIIT 30/30 (13 gentagelser)`` is
-copied into the editable plan and cannot be overwritten; save a customized
+``Puls · HIIT 30/30 (13 gentagelser)`` is
+copied into the editable plan and cannot be overwritten. The watt-controlled
+template ``Watt · VO₂ Max 5 × 5`` is a 28¼-minute session: a 100 → 168 W ramp,
+220 W and 125 W openers, 5 repetitions of 1 minute at 285 W plus 1¼ minutes at
+130 W, and a 150 → 105 W cool-down ramp. Template names start with ``Puls`` or
+``Watt`` to show how they are controlled. Save a customized
 version under a new name on the selected profile. Repeat groups can be adjusted
 by changing their repetition count, work/recovery durations in seconds, and
 work/recovery pulse targets. The controller receives each repeated phase at
@@ -98,6 +102,15 @@ reports the error and the ergometer holds its current load until fresh watch
 readings resume.
 The builder is available only on the local computer. Session logs are written
 to ``data/`` with Windows-compatible timestamped filenames.
+
+A workout is either pulse-controlled or watt-controlled; choose under the
+workout plan. In a pulse-controlled workout the load is regulated to hold the
+pulse at each target (a percentage of maximum pulse). In a watt-controlled
+workout the load follows the plan in watts, starts as soon as the pedals turn
+and needs no maximum pulse; if a maximum pulse is known, the load is lowered
+automatically while the pulse is at or above 95 % of it. Both kinds support
+steady steps, ramps that change linearly over their duration, and repeat
+groups. The heart above the chart always shows the measured pulse.
 
 Supported bikes are listed in ``devices.py``: currently a Kettler on a serial
 RS-232 port and a simulation. Choose the bike type on the page under the bike

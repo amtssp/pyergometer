@@ -14,6 +14,7 @@ from workout import (
     WorkoutServer,
     local_network_addresses,
     _sampled_points,
+    normalize_preset_plan,
     build_chart_plan,
     build_session_xml,
     create_profile,
@@ -909,6 +910,143 @@ class BluetoothHeartRateTests(unittest.TestCase):
             self.assertEqual(device.power_changes, [])
         finally:
             shutil.rmtree(directory)
+
+
+class WattWorkoutTests(unittest.TestCase):
+    def events(self, plan):
+        root = ET.fromstring(build_session_xml(plan))
+        return root.attrib['duration'], [
+            (event.attrib['time'], event.find('action').attrib['type'],
+             int(event.find('action').attrib['value']))
+            for event in root.find('timeEvents').findall('timeEvent')]
+
+    def test_watt_workout_needs_no_maximum_pulse(self):
+        duration, events = self.events({
+            'mode': 'power',
+            'blocks': [
+                {'type': 'interval', 'minutes': 1, 'power': 150},
+                {'type': 'repeat', 'count': 2, 'work_seconds': 30, 'work_power': 285,
+                 'recovery_seconds': 30, 'recovery_power': 130}
+            ]
+        })
+
+        self.assertEqual(duration, '180s')
+        self.assertEqual(events, [
+            ('0', 'power', 150), ('+60s', 'power', 285), ('+30s', 'power', 130),
+            ('+30s', 'power', 285), ('+30s', 'power', 130)])
+
+    def test_pulse_workout_still_needs_maximum_pulse(self):
+        with self.assertRaises(ValueError):
+            build_session_xml({'blocks': [{'type': 'interval', 'minutes': 1, 'percent': 70}]})
+
+    def test_power_ramp_changes_linearly_every_second(self):
+        steps = session_steps(build_chart_plan({
+            'mode': 'power',
+            'blocks': [{'type': 'ramp', 'minutes': 0.5, 'start_power': 100, 'end_power': 160}]
+        }))
+
+        self.assertEqual(len(steps), 30)
+        self.assertEqual([step['power'] for step in steps[:3]], [100, 102, 104])
+        self.assertEqual(steps[-1]['power'], 158)
+        self.assertTrue(all(step['pulse'] == 0 for step in steps))
+
+    def test_pulse_ramp_uses_percent_of_maximum_pulse(self):
+        chart = build_chart_plan({
+            'max_pulse': 200,
+            'blocks': [{'type': 'ramp', 'minutes': 1, 'start_percent': 50, 'end_percent': 80}]
+        })
+        ramp = chart['blocks'][0]
+
+        self.assertEqual((ramp['kind'], ramp['start_value'], ramp['end_value']),
+                         ('pulse', 100, 160))
+        self.assertEqual(session_steps(chart)[30]['pulse'], 130)
+
+    def test_watt_loads_are_validated(self):
+        for power in (24, 1001, 150.5, None):
+            with self.assertRaises(ValueError):
+                build_chart_plan({'mode': 'power',
+                                  'blocks': [{'type': 'interval', 'minutes': 1, 'power': power}]})
+        with self.assertRaises(ValueError):
+            build_chart_plan({'mode': 'cadence', 'blocks': []})
+
+    def test_vo2max_template_matches_the_erg_file(self):
+        steps = session_steps(build_chart_plan({'mode': 'power', 'blocks': [
+            {'type': 'ramp', 'minutes': 5.5, 'start_power': 100, 'end_power': 168},
+            {'type': 'interval', 'minutes': 1.5, 'power': 220},
+            {'type': 'interval', 'minutes': 2, 'power': 125},
+            {'type': 'repeat', 'count': 5, 'work_seconds': 60, 'work_power': 285,
+             'recovery_seconds': 75, 'recovery_power': 130},
+            {'type': 'ramp', 'minutes': 8, 'start_power': 150, 'end_power': 105}
+        ]}))
+
+        self.assertEqual(len(steps), int(28.25 * 60))
+        # Spot-check against the ERG file: minute 9 starts the first 285 W interval,
+        # minute 20.25 starts the 150 W cool-down ramp.
+        self.assertEqual(steps[9 * 60]['power'], 285)
+        self.assertEqual(steps[10 * 60]['power'], 130)
+        self.assertEqual(steps[int(20.25 * 60)]['power'], 150)
+
+    def test_template_names_cannot_be_overwritten(self):
+        directory = tempfile.mkdtemp(prefix='pyergometer-template-test-')
+        self.addCleanup(shutil.rmtree, directory)
+        for name in ('Watt · VO₂ Max 5 × 5', 'puls · hiit 30/30 (13 gentagelser)'):
+            with self.assertRaisesRegex(ValueError, 'new name'):
+                save_profile_preset(
+                    os.path.join(directory, 'profiles.json'),
+                    os.path.join(directory, 'workouts.json'), 'Standard', name,
+                    {'mode': 'power', 'blocks': [{'type': 'interval', 'minutes': 1, 'power': 150}]})
+
+    def test_saved_watt_workout_keeps_its_mode(self):
+        plan = {'mode': 'power', 'max_pulse': 180,
+                'blocks': [{'type': 'interval', 'minutes': 1, 'power': 200}]}
+
+        self.assertEqual(normalize_preset_plan(plan),
+                         {'mode': 'power', 'blocks': plan['blocks']})
+        self.assertNotIn('mode', normalize_preset_plan(
+            {'blocks': [{'type': 'interval', 'minutes': 1, 'percent': 70}]}))
+
+    def make_controller(self, pulse, pulse_limit=None):
+        class FakeDevice(object):
+            rpm = 60
+            power = 0
+
+            def __init__(self):
+                self.pulse = pulse
+                self.loads = []
+
+            def status(self):
+                pass
+
+            def set_power(self, absolute=0.0, relative=0.0):
+                self.loads.append(absolute)
+                self.power = absolute
+
+        class FakeSession(object):
+            def step(self, second):
+                return {'time': second, 'power': 200, 'pulse': 0}
+
+        return Ergometer(device=FakeDevice(), session=FakeSession(), pulse_limit=pulse_limit)
+
+    def test_watt_step_is_applied_without_a_pulse_reading(self):
+        controller = self.make_controller(pulse=0)
+
+        controller.control_step(0)
+
+        self.assertEqual(controller.device.loads, [200])
+
+    def test_pulse_limit_lowers_and_restores_the_load(self):
+        controller = self.make_controller(pulse=180, pulse_limit=171)
+        controller.control_step(0)
+        controller.control_step(1)
+        controller.device.pulse = 168
+        controller.control_step(2)
+        controller.device.pulse = 160
+        controller.control_step(3)
+        controller.control_step(4)
+        controller.control_step(5)
+        controller.control_step(6)
+
+        self.assertEqual(controller.device.loads, [190, 180, 180, 185, 190, 195, 200])
 
 
 class Python3ControllerTests(unittest.TestCase):
