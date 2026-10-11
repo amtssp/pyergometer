@@ -262,6 +262,32 @@
     #workout-name-state { font-size: .88rem; font-weight: 600; }
     #workout-name-state.running { color: #c62828; }
 
+    /* Chart with the +/- buttons on its right */
+    .chart-row { display: flex; align-items: center; gap: .75rem; }
+    .chart-row > svg { flex: 1 1 auto; min-width: 0; }
+    .adjust-buttons { flex: none; display: flex; flex-direction: column; gap: 1.25rem; }
+    .adjust-buttons button {
+      width: 4.5rem;
+      height: 4.5rem;
+      padding: 0;
+      border-radius: 50%;
+      font-size: 2.4rem;
+      font-weight: 700;
+      line-height: 1;
+      color: #fff;
+      border: 0;
+      box-shadow: 0 4px 12px rgba(16, 32, 48, .18);
+      touch-action: manipulation;
+    }
+    /* Light green and light pink at the same lightness, with dark symbols for contrast. */
+    #target-up { background: #a8e0b4; color: #14532d; }
+    #target-up:hover:not(:disabled) { background: #8fd49e; }
+    #target-down { background: #f5b8cc; color: #7a1538; }
+    #target-down:hover:not(:disabled) { background: #ef9fb9; }
+    #target-up:disabled, #target-down:disabled {
+      background: #dfe5ea; color: #9aa7b3; box-shadow: none; opacity: 1;
+    }
+
     /* Live pulse heart above the chart */
     .chart-head { flex-wrap: nowrap; align-items: center; }
     .chart-head > div:first-child { min-width: 0; }
@@ -318,6 +344,8 @@
       .block[data-type="repeat"] .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       details.panel > summary .hint { display: none; }
       #pulse-chart { min-height: 0; }
+      .adjust-buttons { gap: .75rem; }
+      .adjust-buttons button { width: 3.25rem; height: 3.25rem; font-size: 1.8rem; }
     }
   </style>
 </head>
@@ -360,8 +388,16 @@
       </div>
     </div>
     <div id="chart-message" class="muted" aria-live="polite">Grafen følger træningsplanen og opdateres én gang i sekundet.</div>
-    <svg id="pulse-chart" viewBox="0 0 900 400" role="img"
-         aria-label="Graf over ønsket og målt puls under træningen. Træk i blå mållinjer for at ændre puls og i orange diamanter for at ændre varighed."></svg>
+    <div class="chart-row">
+      <svg id="pulse-chart" viewBox="0 0 900 400" role="img"
+           aria-label="Graf over ønsket og målt puls under træningen. Træk i blå mållinjer for at ændre puls og i orange diamanter for at ændre varighed."></svg>
+      <div class="adjust-buttons">
+        <button id="target-up" type="button" disabled aria-label="Øg pulsmål eller belastning"
+                title="Øg pulsmål eller belastning (virker under træning)">+</button>
+        <button id="target-down" type="button" disabled aria-label="Sænk pulsmål eller belastning"
+                title="Sænk pulsmål eller belastning (virker under træning)">&minus;</button>
+      </div>
+    </div>
     <p id="chart-help" class="muted">Træk i en blå mållinje for at ændre pulsen, eller i en orange diamant for at ændre varigheden. Under træning slår ændringer igennem ved næste regulering.</p>
     <div class="chart-foot">
       <div class="chart-legend" aria-label="Signaturforklaring">
@@ -508,6 +544,8 @@
       var status = document.getElementById('status');
       var startButton = document.getElementById('start');
       var birthYearInput = document.getElementById('birth-year');
+      var targetUpButton = document.getElementById('target-up');
+      var targetDownButton = document.getElementById('target-down');
       var workoutNameElement = document.getElementById('workout-name');
       var workoutNameState = document.getElementById('workout-name-state');
       var workoutName = null;
@@ -777,6 +815,52 @@
       function liveWorkoutRunning() {
         return latestChart && latestChart.mode === 'real' && latestChart.active;
       }
+
+      // Steps for the +/- buttons: pulse targets in percent of max, loads in watts.
+      var PULSE_STEP_PERCENT = 2;
+      var POWER_STEP_WATTS = 10;
+
+      function updateAdjustButtons() {
+        var running = Boolean(liveWorkoutRunning()) && !stopping;
+        targetUpButton.disabled = !running;
+        targetDownButton.disabled = !running;
+      }
+
+      function adjustCurrentTarget(direction) {
+        if (!liveWorkoutRunning()) return;
+        var plan = latestChart.plan;
+        var elapsed = latestChart.elapsed || 0;
+        var block = ((plan && plan.blocks) || []).filter(function (item) {
+          return elapsed >= item.start && elapsed < item.end;
+        })[0];
+        var row = block && blocks.querySelectorAll('.block')[block.index];
+        if (!row) return;
+        var fieldName, minimum, maximum, step;
+        if (block.type === 'interval') {
+          fieldName = block.repeat_phase === 'work' ? 'work-percent'
+            : block.repeat_phase === 'recovery' ? 'recovery-percent' : 'percent';
+          minimum = 1;
+          maximum = 100;
+          step = PULSE_STEP_PERCENT;
+        } else {
+          fieldName = 'power';
+          minimum = 25;
+          maximum = 400;
+          step = POWER_STEP_WATTS;
+        }
+        var field = row.querySelector('.' + fieldName);
+        var value = Math.max(minimum, Math.min(maximum,
+          (parseInt(field.value, 10) || 0) + direction * step));
+        setBlockField(block.index, fieldName, value);
+        status.className = 'success';
+        status.textContent = block.type === 'interval'
+          ? 'Nyt pulsmål: ' + Math.floor((plan.max_pulse * value + 50) / 100) +
+            ' bpm (' + value + ' %). Slår igennem ved næste regulering.'
+          : 'Ny belastning: ' + value + ' W.';
+      }
+
+      targetUpButton.addEventListener('click', function () { adjustCurrentTarget(1); });
+      targetDownButton.addEventListener('click', function () { adjustCurrentTarget(-1); });
 
       function sendLiveUpdate() {
         if (!liveWorkoutRunning()) return;
@@ -1222,6 +1306,7 @@
             latestChart = data;
             renderChart(data);
             updatePulseBadge(data);
+            updateAdjustButtons();
             updateWorkoutName();
           }
         }).catch(function (error) {
