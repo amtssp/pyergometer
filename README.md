@@ -51,6 +51,14 @@ running. Profiles, saved workouts, bike settings and logs are kept.
 Useful commands on the Pi: ``sudo systemctl status pyergometer`` and
 ``journalctl -u pyergometer -f`` to follow the log.
 
+``install-pi.sh`` also installs ``pyergometer-wifi-watchdog``, which checks the
+Wi-Fi every minute. After 3 minutes without a connection it asks
+NetworkManager to reconnect; after 5 minutes it reloads the Wi-Fi driver and,
+for a USB dongle, unplugs and replugs it in software, repeating every 10
+minutes. It works with any adapter and does nothing on a cable-only setup.
+Rebooting as a last resort is off; set ``REBOOT_AFTER`` (seconds) in the
+service to enable it. Follow it with ``journalctl -u pyergometer-wifi-watchdog -f``.
+
 Starting the program without a session file opens a local workout builder:
 
     ./pyergometer.py

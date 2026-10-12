@@ -61,9 +61,28 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
+echo "==> Opretter WiFi-vagthunden, der genopretter WiFi efter udfald"
+sudo tee "/etc/systemd/system/$SERVICE-wifi-watchdog.service" > /dev/null <<EOF
+[Unit]
+Description=Pyergometer Wi-Fi watchdog
+Wants=NetworkManager.service
+After=NetworkManager.service
+
+[Service]
+Type=simple
+# Set REBOOT_AFTER (seconds) to let the watchdog reboot the Pi as a last resort.
+Environment=REBOOT_AFTER=0 PORT=$PORT
+ExecStart=/bin/bash $DIR/wifi-watchdog.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 sudo systemctl daemon-reload
-sudo systemctl enable "$SERVICE"
-sudo systemctl restart "$SERVICE"
+sudo systemctl enable "$SERVICE" "$SERVICE-wifi-watchdog"
+sudo systemctl restart "$SERVICE" "$SERVICE-wifi-watchdog"
 
 echo "==> Tjekker at siden svarer"
 for attempt in $(seq 1 20); do
