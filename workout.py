@@ -1121,6 +1121,12 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             self._send(200, page, 'text/html; charset=utf-8')
             return
 
+        if request_path == '/udvikling':
+            page_path = os.path.join(os.path.dirname(__file__), 'development.html')
+            with open(page_path, 'rb') as page_file:
+                self._send(200, page_file.read(), 'text/html; charset=utf-8')
+            return
+
         if request_path == '/api/status':
             self.server.refresh_process()
             running = self.server.process is not None

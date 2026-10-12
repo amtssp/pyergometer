@@ -695,6 +695,25 @@ class DeviceDriverTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_device('kettler', None)
 
+    def test_development_page_is_served(self):
+        server = WorkoutServer(('127.0.0.1', 0), simulate=True)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+        try:
+            connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+            connection.request('GET', '/udvikling?profile=Demo')
+            response = connection.getresponse()
+            page = response.read().decode('utf-8')
+            connection.close()
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertIn('Min udvikling', page)
+
     def test_page_offers_the_device_types(self):
         server = WorkoutServer(('127.0.0.1', 0), simulate=True)
         thread = threading.Thread(target=server.serve_forever)

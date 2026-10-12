@@ -70,6 +70,19 @@
     .brand small { display: block; color: var(--muted); font-size: .8rem; }
     .profile-pick { display: flex; align-items: center; gap: .5rem; font-weight: 600; }
     .profile-pick select { min-width: 9rem; }
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2.6rem;
+      padding: .5rem .9rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--accent);
+      background: #fff;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .nav-link:hover { background: #f0f4f8; }
     #start {
       min-width: 12rem;
       min-height: 3.25rem;
@@ -415,6 +428,7 @@
       <label class="profile-pick" for="user-profile">Bruger
         <select id="user-profile"></select>
       </label>
+      <a id="development-link" class="nav-link" href="/udvikling">Min udvikling</a>
       <button id="start" class="primary" type="button">Start træning</button>
     </div>
     <div id="status" role="status" aria-live="polite"></div>
@@ -678,6 +692,8 @@
       var svgNamespace = 'http://www.w3.org/2000/svg';
 
       function rememberProfile(name) {
+        document.getElementById('development-link').href =
+          '/udvikling?profile=' + encodeURIComponent(name);
         try {
           window.localStorage.setItem('pyergometer-profile', name);
         } catch (error) {
