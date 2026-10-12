@@ -166,6 +166,31 @@ watt, energy, watt per heartbeat in settled pulse intervals and every
   highest pulse and VO2max estimated as 10.8 x W/kg + 7. The pulse limit is
   switched off; only ride it if you are used to maximal efforts.
 
+Following progress
+------------------
+
+![The "Min udvikling" page with two and a half years of sample data: stat tiles for VO2max, FTP, pulse drop, watt per heartbeat and total training time, line charts of each measure over time and a year-by-year table](docs/development.png)
+
+The "Min udvikling" link at the top of the workout page (or ``/udvikling``)
+opens an overview of the chosen user's history. Pick the last 3 months, the
+last 12 months or everything; the page shows:
+
+* Stat tiles with the latest VO2max, FTP, 60-second pulse drop and watt per
+  heartbeat, each with its change over the period, plus total training time
+  and number of workouts.
+* Charts of VO2max (one line per test type, since the Åstrand and ramp tests
+  are not directly comparable), pulse drop and watt per heartbeat (every value
+  over 3 months, weekly or monthly averages over longer periods; tests are
+  never averaged), and training time per week, month or year.
+* A year-by-year table: workouts, time, first-to-latest VO2max for each test
+  type, average pulse drop and average watt per heartbeat.
+* Tables of every fitness test (including invalid ones and the reason) and of
+  every workout, newest first.
+
+Pulse drop and watt per heartbeat only rise when fitness improves, so they show
+progress between the fitness tests without any extra effort: add a
+"+ Pulsfald" block at the end of a workout and ride pulse-controlled intervals.
+
 Supported bikes are listed in ``devices.py``: currently a Kettler on a serial
 RS-232 port and a simulation. Choose the bike type on the page under the bike
 settings, or pass ``--device-type`` on the command line (``--simulate`` is short
