@@ -396,6 +396,16 @@
     .limit-toggle input { margin: 0; width: 1.2rem; height: 1.2rem; accent-color: #c62828; flex: none; }
     .limit-toggle.off span { color: var(--muted); }
     .mode-switch { margin-bottom: .5rem; }
+    .load-note {
+      display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem;
+      margin: .75rem 0 0; padding: .5rem .75rem; border-radius: 10px;
+      background: #e3f4e6; color: #14532d; font-weight: 600;
+    }
+    .link-button {
+      min-height: 0; padding: 0; border: 0; background: none; color: var(--accent);
+      font-weight: 700; text-decoration: underline; cursor: pointer;
+    }
+    .link-button:hover:not(:disabled) { background: none; }
     .mode-switch label { display: flex; align-items: center; gap: .45rem; font-weight: 400; min-height: 2rem; }
     .mode-switch input { margin: 0; width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
     .details-body > .subsection:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
@@ -492,7 +502,6 @@
             <option value="">Vælg opsætning</option>
           </select>
         </label>
-        <button id="load-preset" type="button">Indlæs</button>
         <label for="builtin-template">Fælles skabeloner
           <select id="builtin-template">
             <option value="">Vælg fælles træningspas</option>
@@ -502,9 +511,12 @@
             <option value="ramp-test">Test · Maksimal rampe</option>
           </select>
         </label>
-        <button id="apply-template" type="button">Indlæs</button>
       </div>
-      <p class="muted">Fælles skabeloner overskrives ikke. Tilpas passet og gem det under et nyt navn under &raquo;Juster og gem den aktuelle træningsplan&laquo;.</p>
+      <p id="load-note" class="load-note" hidden>
+        <span id="load-note-text"></span>
+        <button id="undo-load" class="link-button" type="button">Fortryd</button>
+      </p>
+      <p class="muted">Træningen indlæses, så snart du vælger den. Fælles skabeloner overskrives ikke. Tilpas passet og gem det under et nyt navn under &raquo;Juster og gem den aktuelle træningsplan&laquo;.</p>
     </div>
   </section>
 
@@ -1809,6 +1821,8 @@
         status.textContent = '';
         applyProfileMaxPulse();
         setWorkoutName(null);
+        planBeforeLoad = null;
+        document.getElementById('load-note').hidden = true;
         presetName.value = '';
         builtinTemplate.value = '';
         updatePresetOptions([]);
@@ -2296,7 +2310,7 @@
           return response.json().then(function (data) {
             if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme opsætningen');
             updatePresetOptions(data.presets);
-            savedPresets.value = presetName.value.trim();
+            savedPresets.value = '';
             setWorkoutName(presetName.value.trim());
             status.className = 'success';
             status.textContent = 'Træningsopsætningen blev gemt lokalt.';
@@ -2307,23 +2321,56 @@
         });
       });
 
-      document.getElementById('load-preset').addEventListener('click', function () {
+      // ------------------------------------------------ load on selection, with undo
+      var planBeforeLoad = null;
+
+      function snapshotPlan() {
+        return {mode: workoutMode, blocks: readBlocks(), name: workoutName,
+          signature: loadedBlocksSignature, presetName: presetName.value,
+          pulseLimit: pulseLimitBox.checked};
+      }
+
+      function showLoaded(name, before) {
+        // Undo is only offered when there was a plan to go back to.
+        planBeforeLoad = before && before.blocks.length ? before : null;
+        document.getElementById('load-note-text').textContent = 'Indlæst: ' + name;
+        document.getElementById('undo-load').hidden = !planBeforeLoad;
+        document.getElementById('load-note').hidden = false;
+      }
+
+      document.getElementById('undo-load').addEventListener('click', function () {
+        if (!planBeforeLoad) return;
+        var plan = planBeforeLoad;
+        planBeforeLoad = null;
+        blocks.textContent = '';
+        blocks.classList.remove('has-blocks');
+        setWorkoutMode(plan.mode, false);
+        plan.blocks.forEach(function (block) { addBlock(block.type, block); });
+        pulseLimitBox.checked = plan.pulseLimit;
+        presetName.value = plan.presetName;
+        workoutName = plan.name;
+        loadedBlocksSignature = plan.signature;
+        updateSummary();
+        document.getElementById('load-note').hidden = true;
+        status.className = 'success';
+        status.textContent = 'Den forrige plan er tilbage.';
+        resetChart().catch(function () { /* the chart refreshes on the next poll */ });
+      });
+
+      savedPresets.addEventListener('change', function () {
+        var selectedName = savedPresets.value;
+        if (!selectedName) return;
+        var before = snapshotPlan();
         status.className = '';
         status.textContent = '';
-        if (!savedPresets.value) {
-          status.className = 'error';
-          status.textContent = 'Vælg først en gemt træningsopsætning.';
-          return;
-        }
-        var selectedName = savedPresets.value;
         loadPresetList().then(function (presets) {
           var preset = presets.filter(function (item) {
             return item.name === selectedName;
           })[0];
           if (!preset) throw new Error('Den gemte opsætning blev ikke fundet.');
           applyPreset(preset);
-          status.className = 'success';
-          status.textContent = 'Træningsopsætningen blev indlæst.';
+          savedPresets.value = '';
+          showLoaded(preset.name, before);
         }).catch(function (error) {
           status.className = 'error';
           status.textContent = error.message;
@@ -2438,6 +2485,8 @@
           });
           newProfileName.disabled = busy;
           document.getElementById('create-profile').disabled = busy;
+          savedPresets.disabled = busy;
+          builtinTemplate.disabled = busy;
           if (data.heart_rate) {
             if (data.heart_rate.fresh) {
               watchStatus.className = 'success';
@@ -2520,7 +2569,9 @@
       );
       setWorkoutMode('pulse', false);
       pulseLimitBox.addEventListener('change', updatePulseLimitToggle);
-      document.getElementById('apply-template').addEventListener('click', function () {
+      builtinTemplate.addEventListener('change', function () {
+        if (!builtinTemplate.value) return;
+        var before = snapshotPlan();
         var templates = {
           'hiit-30-30': {
             mode: 'pulse',
@@ -2586,7 +2637,10 @@
           addBlock(block.type, block);
         });
         presetName.value = '';
-        setWorkoutName(builtinTemplate.options[builtinTemplate.selectedIndex].textContent);
+        var templateName = builtinTemplate.options[builtinTemplate.selectedIndex].textContent;
+        setWorkoutName(templateName);
+        builtinTemplate.value = '';
+        showLoaded(templateName, before);
         status.className = 'success';
         status.textContent = selectedTemplate.message + ' Du kan starte den uden at gemme.';
         resetChart().catch(function (error) {
