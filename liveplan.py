@@ -1,5 +1,8 @@
 import math
 
+# Load during a pulse-drop measurement: the ergometer's minimum while the rider sits still.
+RECOVERY_POWER = 25
+
 
 def _whole_number(value, name, minimum, maximum):
     if isinstance(value, bool) or not isinstance(value, int):
@@ -18,8 +21,10 @@ def session_steps(plan):
     """Expand a chart plan into one {'time', 'power', 'pulse'} step per second.
 
     Block types: 'interval' (pulse target), 'break' (pause at a fixed load),
-    'power' (fixed load in a watt-controlled workout) and 'ramp' (a pulse or
-    power target that changes linearly from start_value to end_value).
+    'power' (fixed load in a watt-controlled workout), 'ramp' (a pulse or
+    power target that changes linearly from start_value to end_value) and
+    'recovery' (sit still at the minimum load while the pulse drop is measured;
+    its steps carry 'recovery': True).
     """
     if not isinstance(plan, dict):
         raise ValueError('Live workout plan must be an object')
@@ -48,6 +53,8 @@ def session_steps(plan):
         elif block_type == 'power':
             power = _whole_number(block.get('power'), 'Load', 25, 1000)
             values = [(power, 0)] * (end - start)
+        elif block_type == 'recovery':
+            values = [(RECOVERY_POWER, 0)] * (end - start)
         elif block_type == 'ramp':
             kind = block.get('kind')
             if kind == 'pulse':
@@ -65,8 +72,10 @@ def session_steps(plan):
         else:
             raise ValueError('Live workout block %d has an invalid type' % (index + 1))
 
+        recovery = block_type == 'recovery'
         for offset, (power, pulse) in enumerate(values):
-            steps.append({'time': start + offset, 'power': power, 'pulse': pulse})
+            steps.append({'time': start + offset, 'power': power, 'pulse': pulse,
+                          'recovery': recovery})
         elapsed = end
 
     if elapsed != duration:

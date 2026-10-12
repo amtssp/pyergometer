@@ -15,6 +15,8 @@ from workout import (
     local_network_addresses,
     _sampled_points,
     normalize_preset_plan,
+    summarize_workout,
+    update_profile_details,
     pulse_limit,
     build_chart_plan,
     build_session_xml,
@@ -501,10 +503,10 @@ class LivePlanTests(unittest.TestCase):
         })
 
         self.assertEqual(len(steps), 180)
-        self.assertEqual(steps[0], {'time': 0, 'power': 0, 'pulse': 135})
-        self.assertEqual(steps[119], {'time': 119, 'power': 0, 'pulse': 135})
-        self.assertEqual(steps[120], {'time': 120, 'power': 60, 'pulse': 0})
-        self.assertEqual(steps[-1], {'time': 179, 'power': 60, 'pulse': 0})
+        self.assertEqual(steps[0], {'time': 0, 'power': 0, 'pulse': 135, 'recovery': False})
+        self.assertEqual(steps[119], {'time': 119, 'power': 0, 'pulse': 135, 'recovery': False})
+        self.assertEqual(steps[120], {'time': 120, 'power': 60, 'pulse': 0, 'recovery': False})
+        self.assertEqual(steps[-1], {'time': 179, 'power': 60, 'pulse': 0, 'recovery': False})
 
     def test_rejects_gaps_or_duration_mismatch_in_live_plan(self):
         with self.assertRaises(ValueError):
@@ -1212,6 +1214,100 @@ class WattWorkoutTests(unittest.TestCase):
         controller.control_step(6)
 
         self.assertEqual(controller.device.loads, [190, 180, 180, 185, 190, 195, 200])
+
+
+class FitnessDataTests(unittest.TestCase):
+    def test_profile_details_are_saved_and_validated(self):
+        directory = tempfile.mkdtemp(prefix='pyergometer-details-test-')
+        self.addCleanup(shutil.rmtree, directory)
+        profiles_path = os.path.join(directory, 'profiles.json')
+        presets_path = os.path.join(directory, 'workouts.json')
+        create_profile(profiles_path, presets_path, 'Anna')
+        update_profile_max_pulse(profiles_path, presets_path, 'Anna',
+                                 {'source': 'birth_year', 'birth_year': 1960})
+
+        update_profile_details(profiles_path, presets_path, 'Anna',
+                               {'birth_year': 1962, 'sex': 'female', 'weight_kg': 64.25})
+        anna = read_profiles(profiles_path, presets_path)[1]
+
+        self.assertEqual((anna['birth_year'], anna['sex'], anna['weight_kg']), (1962, 'female', 64.2))
+        # A maximum pulse from birth year follows the saved year.
+        self.assertEqual(anna['max_pulse'], {'source': 'birth_year', 'birth_year': 1962})
+        for details in ({'sex': 'other'}, {'weight_kg': 10}, {'birth_year': 1700}):
+            with self.assertRaises(ValueError):
+                update_profile_details(profiles_path, presets_path, 'Anna', details)
+
+    def test_old_profiles_get_their_birth_year_from_max_pulse(self):
+        directory = tempfile.mkdtemp(prefix='pyergometer-details-test-')
+        self.addCleanup(shutil.rmtree, directory)
+        path = os.path.join(directory, 'profiles.json')
+        with open(path, 'w') as profile_file:
+            json.dump({'profiles': [{'name': 'Bo', 'watch': None, 'presets': [],
+                                     'max_pulse': {'source': 'birth_year', 'birth_year': 1959}}]},
+                      profile_file)
+
+        bo = read_profiles(path)[0]
+
+        self.assertEqual((bo['birth_year'], bo['sex'], bo['weight_kg']), (1959, None, None))
+
+    def test_recovery_block_sits_still_at_minimum_load(self):
+        chart = build_chart_plan({'max_pulse': 180, 'blocks': [
+            {'type': 'interval', 'minutes': 1, 'percent': 80},
+            {'type': 'recovery'}]})
+        steps = session_steps(chart)
+
+        self.assertEqual(chart['blocks'][1]['type'], 'recovery')
+        self.assertEqual(len(steps), 120)
+        self.assertEqual((steps[60]['power'], steps[60]['recovery']), (25, True))
+        root = ET.fromstring(build_session_xml({'max_pulse': 180, 'blocks': [
+            {'type': 'interval', 'minutes': 1, 'percent': 80}, {'type': 'recovery', 'seconds': 90}]}))
+        actions = [event.find('action').attrib['type'] for event in root.find('timeEvents')]
+        self.assertEqual(actions, ['pulse', 'recovery'])
+
+    def test_controller_measures_pulse_while_the_rider_sits_still(self):
+        class Device(object):
+            rpm = 0
+            pulse = 150
+            power = 200
+
+            def status(self):
+                pass
+
+            def set_power(self, absolute=0.0, relative=0.0):
+                self.power = absolute
+
+        class Session(object):
+            def step(self, second):
+                return {'time': second, 'power': 25, 'pulse': 0, 'recovery': True}
+
+        directory = tempfile.mkdtemp(prefix='pyergometer-recovery-test-')
+        self.addCleanup(shutil.rmtree, directory)
+        live_path = os.path.join(directory, 'live.jsonl')
+        controller = Ergometer(device=Device(), session=Session(), live_log=live_path)
+        controller.control_step(5)
+        controller.live_log_file.close()
+
+        with open(live_path) as live_file:
+            sample = json.loads(live_file.readline())
+        self.assertEqual((sample['pulse'], sample['recovery']), (150, True))
+        self.assertEqual(controller.device.power, 25)
+
+    def test_summary_measures_pulse_drop_and_watt_per_beat(self):
+        chart = build_chart_plan({'max_pulse': 200, 'blocks': [
+            {'type': 'interval', 'minutes': 5, 'percent': 70},
+            {'type': 'recovery'}]})
+        samples = [{'elapsed': second, 'pulse': 140, 'power': 150} for second in range(300)]
+        samples += [{'elapsed': 300 + second, 'pulse': 140 - second // 2, 'power': 25,
+                     'recovery': True} for second in range(60)]
+
+        summary = summarize_workout(samples, chart)
+
+        self.assertEqual(summary['recoveries'], [
+            {'start_pulse': 140, 'end_pulse': 111, 'drop': 29, 'seconds': 60}])
+        self.assertAlmostEqual(summary['watt_per_beat'], 150 / 140.0, places=3)
+        self.assertEqual(summary['max_pulse'], 140)
+        self.assertEqual(summary['avg_power'], 150)
+        self.assertEqual(summary['energy_kj'], 45.0)
 
 
 class Python3ControllerTests(unittest.TestCase):

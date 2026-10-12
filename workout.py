@@ -10,7 +10,7 @@ import threading
 import webbrowser
 import xml.etree.ElementTree as ET
 from bleheartrate import HeartRateMonitor, scan_heart_rate_devices
-from liveplan import ramp_value, session_steps
+from liveplan import RECOVERY_POWER, ramp_value, session_steps
 from devices import DEFAULT_DEVICE_TYPE, device_type, device_type_ids, public_device_types
 try:
     from urllib.parse import parse_qs, urlparse
@@ -196,10 +196,30 @@ def _profile_name(name):
     return name
 
 
+PROFILE_SEXES = ('male', 'female')
+
+
+def normalize_profile_details(birth_year, sex, weight_kg):
+    """Validate the personal details used by the fitness tests; each may be None."""
+    this_year = _utcnow().year
+    if birth_year is not None:
+        birth_year = _integer(birth_year, 'Birth year', this_year - 120, this_year - 1)
+    if sex is not None and sex not in PROFILE_SEXES:
+        raise ValueError('Sex must be male or female')
+    if weight_kg is not None:
+        if isinstance(weight_kg, bool) or not isinstance(weight_kg, integer_types + (float,)):
+            raise ValueError('Weight must be a number of kilograms')
+        if weight_kg < 20 or weight_kg > 300:
+            raise ValueError('Weight must be between 20 and 300 kg')
+        weight_kg = round(float(weight_kg), 1)
+    return {'birth_year': birth_year, 'sex': sex, 'weight_kg': weight_kg}
+
+
 def read_profiles(path, legacy_presets_path=None):
     if not os.path.exists(path):
         presets = read_presets(legacy_presets_path) if legacy_presets_path else []
-        return [{'name': 'Standard', 'max_pulse': None, 'watch': None, 'presets': presets}]
+        return [{'name': 'Standard', 'max_pulse': None, 'birth_year': None, 'sex': None,
+                 'weight_kg': None, 'watch': None, 'presets': presets}]
 
     with open(path, 'rb') as profile_file:
         data = json.loads(profile_file.read().decode('utf-8'))
@@ -233,12 +253,16 @@ def read_profiles(path, legacy_presets_path=None):
                 'name': preset['name'],
                 'plan': normalize_preset_plan(preset.get('plan'))
             })
-        profiles.append({
-            'name': name,
-            'max_pulse': normalize_profile_max_pulse(profile.get('max_pulse')),
-            'watch': watch,
-            'presets': normalized_presets
-        })
+        max_pulse = normalize_profile_max_pulse(profile.get('max_pulse'))
+        birth_year = profile.get('birth_year')
+        if birth_year is None and max_pulse and max_pulse['source'] == 'birth_year':
+            # Profiles from before the details existed kept the birth year in max_pulse.
+            birth_year = max_pulse['birth_year']
+        entry = {'name': name, 'max_pulse': max_pulse}
+        entry.update(normalize_profile_details(
+            birth_year, profile.get('sex'), profile.get('weight_kg')))
+        entry.update({'watch': watch, 'presets': normalized_presets})
+        profiles.append(entry)
     return profiles
 
 
@@ -315,7 +339,8 @@ def create_profile(path, legacy_presets_path, name):
     profiles = read_profiles(path, legacy_presets_path)
     if any(profile['name'].lower() == name.lower() for profile in profiles):
         raise ValueError('A profile with this name already exists')
-    profiles.append({'name': name, 'max_pulse': None, 'watch': None, 'presets': []})
+    profiles.append({'name': name, 'max_pulse': None, 'birth_year': None, 'sex': None,
+                     'weight_kg': None, 'watch': None, 'presets': []})
     write_profiles(path, profiles)
     return profiles
 
@@ -337,6 +362,25 @@ def update_profile_watch(path, legacy_presets_path, profile_name, watch):
     for profile in profiles:
         if profile['name'] == profile_name:
             profile['watch'] = watch
+            write_profiles(path, profiles)
+            return profiles
+    raise ValueError('User profile was not found')
+
+
+def update_profile_details(path, legacy_presets_path, profile_name, details):
+    """Save birth year, sex and weight; a maximum pulse from birth year follows the year."""
+    profile_name = _profile_name(profile_name)
+    if not isinstance(details, dict):
+        raise ValueError('Profile details must be an object')
+    normalized = normalize_profile_details(
+        details.get('birth_year'), details.get('sex'), details.get('weight_kg'))
+    profiles = read_profiles(path, legacy_presets_path)
+    for profile in profiles:
+        if profile['name'] == profile_name:
+            profile.update(normalized)
+            max_pulse = profile.get('max_pulse')
+            if max_pulse and max_pulse['source'] == 'birth_year' and normalized['birth_year']:
+                max_pulse['birth_year'] = normalized['birth_year']
             write_profiles(path, profiles)
             return profiles
     raise ValueError('User profile was not found')
@@ -451,6 +495,10 @@ def build_chart_plan(plan):
                                  'start_value': _power(block.get('start_power'), '%s start' % label),
                                  'end_value': _power(block.get('end_power'), '%s end' % label)},
                                 duration))
+        elif block_type == 'recovery':
+            # Sit still while the pulse drop after the previous block is measured.
+            seconds = _integer(block.get('seconds', 60), '%s duration' % label, 30, 300)
+            entries.append(({'type': 'recovery', 'power': RECOVERY_POWER}, seconds))
         elif block_type == 'repeat':
             count = _integer(block.get('count'), 'Repeat count %d' % (index + 1), 1, 100)
             phases = []
@@ -471,7 +519,7 @@ def build_chart_plan(plan):
             for unused in range(count):
                 entries.extend((dict(entry), seconds) for entry, seconds in phases)
         else:
-            raise ValueError('%s must be an interval, break, ramp or repeat' % label)
+            raise ValueError('%s must be an interval, break, ramp, recovery or repeat' % label)
 
         for entry, duration in entries:
             entry.update({'index': index, 'start': elapsed, 'end': elapsed + duration})
@@ -496,12 +544,103 @@ def pulse_limit(chart_plan, enabled=True):
     return chart_plan['max_pulse'] * PULSE_LIMIT_PERCENT // 100
 
 
+# A pulse interval counts towards watt per heartbeat only after the pulse has
+# settled: skip its first minutes and use seconds within a few beats of target.
+EFFICIENCY_SETTLE_SECONDS = 120
+EFFICIENCY_MIN_BLOCK_SECONDS = 180
+EFFICIENCY_TOLERANCE = 5
+EFFICIENCY_MIN_SAMPLES = 60
+RECOVERY_MEASURE_SECONDS = 60
+
+
+def _pulse_at(by_second, second):
+    """The measured pulse at ``second``, or the closest earlier second within 5 s."""
+    for candidate in range(second, second - 6, -1):
+        pulse = by_second.get(candidate)
+        if pulse is not None and pulse >= 20:
+            return pulse
+    return None
+
+
+def summarize_workout(samples, chart_plan):
+    """Key figures for one workout from its live samples (one per second at most)."""
+    pulses = [sample['pulse'] for sample in samples if sample.get('pulse', 0) >= 20]
+    riding = [sample for sample in samples if not sample.get('recovery')]
+    powers = [max(0, sample.get('power', sample.get('target_power', 0))) for sample in riding]
+    summary = {
+        'seconds': (samples[-1]['elapsed'] + 1) if samples else 0,
+        'avg_pulse': int(round(float(sum(pulses)) / len(pulses))) if pulses else None,
+        'max_pulse': max(pulses) if pulses else None,
+        'avg_power': int(round(float(sum(powers)) / len(powers))) if powers else None,
+        'energy_kj': round(sum(powers) / 1000.0, 1),
+        'watt_per_beat': None,
+        'recoveries': []
+    }
+
+    by_second = dict((sample['elapsed'], sample.get('pulse', 0)) for sample in samples)
+    steady_power = steady_pulse = steady_count = 0
+    for block in chart_plan.get('blocks', []):
+        if block['type'] == 'recovery':
+            measured = min(RECOVERY_MEASURE_SECONDS, block['end'] - block['start'])
+            first = _pulse_at(by_second, block['start'])
+            last = _pulse_at(by_second, block['start'] + measured)
+            if first is not None and last is not None:
+                summary['recoveries'].append({
+                    'start_pulse': first, 'end_pulse': last,
+                    'drop': first - last, 'seconds': measured})
+        elif (block['type'] == 'interval' and not block.get('repeat_phase') and
+                block['end'] - block['start'] >= EFFICIENCY_MIN_BLOCK_SECONDS):
+            for sample in samples:
+                if (block['start'] + EFFICIENCY_SETTLE_SECONDS <= sample['elapsed'] < block['end'] and
+                        sample.get('pulse', 0) >= 20 and
+                        abs(sample['pulse'] - block['pulse']) <= EFFICIENCY_TOLERANCE):
+                    steady_power += sample.get('power', 0)
+                    steady_pulse += sample['pulse']
+                    steady_count += 1
+    if steady_count >= EFFICIENCY_MIN_SAMPLES and steady_pulse:
+        summary['watt_per_beat'] = round(float(steady_power) / steady_pulse, 3)
+    return summary
+
+
+def read_history(path):
+    if not os.path.exists(path):
+        return []
+    with open(path, 'rb') as history_file:
+        data = json.loads(history_file.read().decode('utf-8'))
+    if not isinstance(data, dict) or not isinstance(data.get('sessions'), list):
+        raise ValueError('Training history file has an invalid format')
+    return data['sessions']
+
+
+def append_history(path, session):
+    sessions = read_history(path)
+    sessions.append(session)
+    directory = os.path.dirname(os.path.abspath(path))
+    temporary = tempfile.NamedTemporaryFile(
+        mode='wb', prefix='history-', suffix='.tmp', dir=directory, delete=False)
+    try:
+        temporary.write(json.dumps({'sessions': sessions}, ensure_ascii=False,
+                                   indent=1).encode('utf-8'))
+        temporary.close()
+        os.replace(temporary.name, path)
+    except Exception:
+        temporary.close()
+        if os.path.exists(temporary.name):
+            os.remove(temporary.name)
+        raise
+
+
 def build_session_xml(plan):
     """Session XML for the controller, built from the same per-second steps as live updates."""
     steps = session_steps(build_chart_plan(plan))
     events = []
     for step in steps:
-        action, value = ('power', step['power']) if step['power'] > 0 else ('pulse', step['pulse'])
+        if step['recovery']:
+            action, value = 'recovery', step['power']
+        elif step['power'] > 0:
+            action, value = 'power', step['power']
+        else:
+            action, value = 'pulse', step['pulse']
         if events and events[-1][0] == action and events[-1][1] == value:
             events[-1][2] += 1
         else:
@@ -583,6 +722,9 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         self.last_error = None
         self.presets_file = os.path.join(os.path.dirname(__file__), 'workouts.json')
         self.profiles_file = os.path.join(os.path.dirname(__file__), 'user_profiles.json')
+        self.history_file = os.path.join(os.path.dirname(__file__), 'training_history.json')
+        self.workout_profile = None
+        self.workout_started = None
         self.chart_plan = None
         self.chart_live_path = None
         self.chart_control_path = None
@@ -666,6 +808,32 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         hosts.update(local_network_addresses())
         return hosts
 
+    def record_history(self, exit_code):
+        """Save a summary of the finished workout on the rider's profile."""
+        if not self.workout_profile or not self.chart_live_path or not self.chart_plan:
+            return
+        try:
+            samples = []
+            with open(self.chart_live_path, 'rb') as live_file:
+                for line in live_file.read().decode('utf-8').splitlines():
+                    if line.strip():
+                        samples.append(json.loads(line))
+            if not samples:
+                return
+            session = {
+                'profile': self.workout_profile,
+                'started': self.workout_started,
+                'name': self.chart_plan.get('name') or 'Ny træning',
+                'mode': self.chart_plan.get('mode', 'pulse'),
+                'planned_seconds': self.chart_plan.get('duration'),
+                'completed': exit_code == 0 and not self.stop_requested,
+                'log': os.path.basename(self.log_json) if self.log_json else None
+            }
+            session.update(summarize_workout(samples, self.chart_plan))
+            append_history(self.history_file, session)
+        except (IOError, OSError, ValueError, KeyError, TypeError) as error:
+            sys.stderr.write('Could not save the workout summary: %s\n' % error)
+
     def refresh_process(self):
         if self.process is None:
             return
@@ -674,6 +842,7 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         if exit_code is None:
             return
 
+        self.record_history(exit_code)
         self.process = None
         self.last_exit_code = exit_code
         self.stop_requested = False
@@ -820,6 +989,20 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {'profiles': profiles})
             return
 
+        if request_path == '/api/history':
+            profile_values = parse_qs(request_url.query).get('profile', [])
+            if len(profile_values) != 1:
+                self._send_json(400, {'error': 'Choose one user profile'})
+                return
+            try:
+                sessions = [session for session in read_history(self.server.history_file)
+                            if session.get('profile') == profile_values[0]]
+            except (IOError, ValueError) as error:
+                self._send_json(500, {'error': 'Could not read training history: %s' % error})
+                return
+            self._send_json(200, {'sessions': sessions})
+            return
+
         if request_path == '/api/presets':
             profile_values = parse_qs(request_url.query).get('profile', ['Standard'])
             if len(profile_values) != 1:
@@ -940,6 +1123,10 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                     profiles = create_profile(
                         self.server.profiles_file, self.server.presets_file,
                         request.get('name'))
+                elif request.get('action') == 'save-details':
+                    profiles = update_profile_details(
+                        self.server.profiles_file, self.server.presets_file,
+                        request.get('profile'), request.get('details'))
                 elif request.get('action') == 'save-max-pulse':
                     profiles = update_profile_max_pulse(
                         self.server.profiles_file, self.server.presets_file,
@@ -1206,6 +1393,9 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         self.server.stop_requested = False
         self.server.chart_plan = chart_plan
         self.server.chart_limited = False
+        profile = request.get('profile')
+        self.server.workout_profile = profile.strip() if isinstance(profile, text_types) else None
+        self.server.workout_started = datetime.datetime.now().replace(microsecond=0).isoformat()
         self.server.chart_live_path = live_log_path
         self.server.chart_control_path = live_control_path
         self.server.heart_rate_monitor = monitor

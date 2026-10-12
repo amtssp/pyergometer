@@ -18,3 +18,4 @@ data-test
 build/
 nohup.out
 .venv/
+training_history.json

@@ -22,4 +22,6 @@ class Simulator(ErgometerDevice):
         elif absolute > 0.0:
             self.xpower = absolute
         
+        # Same limits as the Kettler, so a simulated workout never reports negative watts.
+        self.xpower = max(25.0, min(400.0, self.xpower))
         self.power = int(self.xpower)

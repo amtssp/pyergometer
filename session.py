@@ -21,13 +21,15 @@ class Session:
                     self.steps.append({
                             'time': prevstep['time']+1,
                             'power': prevstep['power'],
-                            'pulse': prevstep['pulse']
+                            'pulse': prevstep['pulse'],
+                            'recovery': prevstep['recovery']
                             })
 
                 prevstep = self.steps[-1:][0]
                 self.steps.append({
                         'time': prevstep['time']+1,
-                        'power': value if action == 'power' else 0,
+                        'power': value if action in ('power', 'recovery') else 0,
+                        'recovery': action == 'recovery',
                         'pulse': value if action == 'pulse' else 0
                         })
             
@@ -35,7 +37,8 @@ class Session:
                 self.steps = []
                 self.steps.append({
                         'time': 0,
-                        'power': value if action == 'power' else 0,
+                        'power': value if action in ('power', 'recovery') else 0,
+                        'recovery': action == 'recovery',
                         'pulse': value if action == 'pulse' else 0
                         })
         
@@ -44,7 +47,8 @@ class Session:
             self.steps.append({
                     'time': prevstep['time']+1,
                     'power': prevstep['power'],
-                    'pulse': prevstep['pulse']
+                    'pulse': prevstep['pulse'],
+                    'recovery': prevstep['recovery']
                     })
     
     def parse_timestring(self, s):

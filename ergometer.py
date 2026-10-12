@@ -116,7 +116,9 @@ class Ergometer:
             self.refresh_heart_rate()
 
         step = self.session.step(elapsed)
-        if self.device.rpm < 20 or (step['pulse'] > 0 and self.device.pulse < 20):
+        recovery = step.get('recovery', False)
+        # During a pulse-drop measurement the rider sits still, so pedalling is not required.
+        if not recovery and (self.device.rpm < 20 or (step['pulse'] > 0 and self.device.pulse < 20)):
             sys.stderr.write('.')
             return
 
@@ -137,12 +139,16 @@ class Ergometer:
                 'target_pulse': int(step['pulse']),
                 'target_power': int(step['power']),
                 'power': int(self.device.power),
-                'limited': self.limit_reduction > 0
+                'limited': self.limit_reduction > 0,
+                'recovery': recovery
             }
             self.live_log_file.write(json.dumps(sample) + '\n')
             self.live_log_file.flush()
 
         self.pc = elapsed + 1
+        if recovery:
+            self.device.set_power(absolute=step['power'])
+            return
         if step['power'] > 0.0:
             self.device.set_power(absolute=self.limited_power(step['power']))
             return

@@ -497,6 +497,7 @@
         <button id="add-interval" type="button">+ Interval</button>
         <button id="add-break" type="button">+ Pause</button>
         <button id="add-ramp" type="button">+ Rampe</button>
+        <button id="add-recovery" type="button">+ Pulsfald</button>
         <button id="add-repeat" type="button">+ Gentagne intervaller</button>
       </div>
 
@@ -515,6 +516,29 @@
   <details class="panel" id="profile-panel">
     <summary><span id="profile-title">Brugerprofil</span><span id="profile-hint" class="hint"></span></summary>
     <div class="details-body">
+      <div class="subsection">
+        <div class="settings">
+          <label for="birth-year">Fødselsår
+            <input id="birth-year" type="number" min="1900" max="2100" step="1" placeholder="Fx 1965">
+          </label>
+          <label for="sex">Køn
+            <select id="sex">
+              <option value="">Vælg</option>
+              <option value="male">Mand</option>
+              <option value="female">Kvinde</option>
+            </select>
+          </label>
+          <label for="weight">Vægt (kg)
+            <input id="weight" type="number" min="20" max="300" step="0.1" placeholder="Fx 75">
+          </label>
+        </div>
+        <div class="saved-row">
+          <p class="muted">Bruges til at beregne dit kondital i konditestene.</p>
+          <span id="details-saved" class="saved-tick" role="status"></span>
+        </div>
+      </div>
+
+      <div class="subsection">
       <div class="settings">
         <fieldset>
           <legend>Max-puls</legend>
@@ -526,15 +550,13 @@
             <option value="">Vælg max-puls</option>
           </select>
         </label>
-        <label for="birth-year">Fødselsår
-          <input id="birth-year" type="number" min="1900" max="2100" step="1" placeholder="Fx 1965" disabled>
-        </label>
       </div>
       <div class="saved-row">
         <p id="max-pulse-result" class="muted" aria-live="polite">Vælg max-puls eller indtast fødselsår.</p>
         <span id="max-pulse-saved" class="saved-tick" role="status"></span>
       </div>
       <p class="muted">Max-puls gemmes automatisk på profilen og bruges i alle træninger.</p>
+      </div>
 
       <div class="subsection">
         <div class="settings">
@@ -597,6 +619,8 @@
       var status = document.getElementById('status');
       var startButton = document.getElementById('start');
       var birthYearInput = document.getElementById('birth-year');
+      var sexSelect = document.getElementById('sex');
+      var weightInput = document.getElementById('weight');
       var workoutMode = 'pulse';
       var pulseLimitBox = document.getElementById('pulse-limit');
       var chartGeometry = {left: 70, plotWidth: 805, plotHeight: 316};
@@ -698,7 +722,7 @@
         var useBirthYear = maxPulseSource() === 'birth_year';
         maxPulse.disabled = busy || useBirthYear;
         maxPulse.required = !useBirthYear;
-        birthYearInput.disabled = busy || !useBirthYear;
+        birthYearInput.disabled = busy;
         birthYearInput.required = useBirthYear;
         updateMaxPulseResult();
         updateSummary();
@@ -744,8 +768,41 @@
           'input[name="max-pulse-source"][value="' + source + '"]'
         ).checked = true;
         maxPulse.value = saved && saved.source === 'manual' ? String(saved.value) : '';
-        birthYearInput.value = saved && saved.source === 'birth_year' ? saved.birth_year : '';
+        var birthYear = (profile && profile.birth_year) ||
+          (saved && saved.source === 'birth_year' ? saved.birth_year : '');
+        birthYearInput.value = birthYear || '';
+        sexSelect.value = (profile && profile.sex) || '';
+        weightInput.value = profile && profile.weight_kg ? profile.weight_kg : '';
         updateMaxPulseSource();
+      }
+
+      function saveProfileDetails() {
+        if (!activeProfile) return;
+        var profileName = activeProfile;
+        var weight = parseFloat(weightInput.value);
+        var details = {
+          birth_year: selectedAge() !== null ? parseInt(birthYearInput.value, 10) : null,
+          sex: sexSelect.value || null,
+          weight_kg: weightInput.value && weightInput.validity.valid && isFinite(weight) ? weight : null
+        };
+        fetch('/api/profiles', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: 'save-details', profile: profileName, details: details})
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme profilen');
+            return data.profiles;
+          });
+        }).then(function (profiles) {
+          profiles.forEach(function (profile) {
+            profilesByName[profile.name] = profile;
+          });
+          flashSaved(document.getElementById('details-saved'), 'Gemt på ' + profileName);
+        }).catch(function (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        });
       }
 
       function saveProfileMaxPulse() {
@@ -780,6 +837,7 @@
 
       function currentBlockTarget(block, elapsed, plan) {
         if (!block) return '';
+        if (block.type === 'recovery') return 'Sid stille · pulsfald';
         if (block.type === 'interval') return 'Mål ' + block.pulse + ' bpm';
         if (block.type === 'power') return 'Mål ' + block.power + ' W';
         if (block.type === 'ramp') {
@@ -859,6 +917,12 @@
             }
             return;
           }
+          if (type === 'recovery') {
+            var recoverySeconds = parseInt(row.querySelector('.seconds').value, 10) || 0;
+            totalSeconds += recoverySeconds;
+            lines.push('Pulsfald ' + recoverySeconds + ' sek.');
+            return;
+          }
           var minutesField = row.querySelector('.minutes');
           var minutes = parseFloat(minutesField.value);
           if (minutesField.validity.valid && isFinite(minutes) && minutes > 0) {
@@ -936,7 +1000,7 @@
           return elapsed >= item.start && elapsed < item.end;
         })[0];
         var row = block && blocks.querySelectorAll('.block')[block.index];
-        if (!row) return;
+        if (!row || block.type === 'recovery') return;
         var fieldNames, minimum, maximum, step, unit;
         var pulseTarget = block.type === 'interval' || (block.type === 'ramp' && block.kind === 'pulse');
         if (block.type === 'interval') {
@@ -1090,6 +1154,12 @@
                 add(entry, phase.seconds);
               });
             }
+            return;
+          }
+          if (type === 'recovery') {
+            var recoverySeconds = number(row, 'seconds');
+            if (!isFinite(recoverySeconds)) return;
+            add({type: 'recovery', power: 25, index: index, draggable: false}, recoverySeconds);
             return;
           }
           var minutes = number(row, 'minutes');
@@ -1315,6 +1385,17 @@
               x1: barX, x2: barX + barWidth, y1: startY, y2: endY,
               stroke: block.kind === 'power' ? wattLine : pulseLine, 'stroke-width': 2
             }));
+          } else if (block.type === 'recovery') {
+            pulseChart.appendChild(svgElement('rect', {
+              x: barX, y: top, width: barWidth, height: plotHeight,
+              fill: '#bfe6c6', opacity: .55
+            }));
+            if (barWidth > 40) {
+              pulseChart.appendChild(svgElement('text', {
+                x: barX + barWidth / 2, y: top + 15,
+                'text-anchor': 'middle', fill: '#1b6b33', 'font-size': 11
+              }, 'Pulsfald'));
+            }
           } else {
             pulseChart.appendChild(svgElement('rect', {
               x: barX, y: top, width: barWidth, height: plotHeight,
@@ -1501,7 +1582,9 @@
                    (parseInt(item.querySelector('.recovery-seconds').value, 10) || 0));
                 chartDrag.otherMinutes += Math.ceil(repeatSeconds / 30) / 2;
               } else {
-                chartDrag.otherMinutes += parseFloat(item.querySelector('.minutes').value) || 0;
+                chartDrag.otherMinutes += item.dataset.type === 'recovery'
+                  ? (parseInt(item.querySelector('.seconds').value, 10) || 0) / 60
+                  : parseFloat(item.querySelector('.minutes').value) || 0;
               }
             }
           });
@@ -1632,6 +1715,7 @@
         title.textContent = values.label || (
           type === 'repeat' ? (powerMode ? 'Gentagne watt-intervaller (hårdt / let)'
             : 'Gentagne pulsintervaller (hårdt / let)')
+            : type === 'recovery' ? 'Pulsfald – sid stille på cyklen'
             : type === 'ramp' ? 'Rampe'
               : type === 'break' ? 'Pause med lav belastning'
                 : powerMode ? 'Trin med fast belastning' : 'Arbejdsinterval');
@@ -1654,6 +1738,9 @@
             ? makeField('Let (W)', 'number', values.recovery_power || 120, 25, 1000, 1, 'recovery-power')
             : makeField('Let mål (% af max)', 'number',
               values.recovery_percent || 60, 1, 100, 1, 'recovery-percent'));
+        } else if (type === 'recovery') {
+          fields.appendChild(makeField('Varighed (sek.)', 'number',
+            values.seconds || 60, 30, 300, 5, 'seconds'));
         } else if (type === 'ramp') {
           if (powerMode) {
             fields.appendChild(makeField('Start (W)', 'number',
@@ -1676,7 +1763,7 @@
           fields.appendChild(makeField('Belastning (W)', 'number',
             values.power || 60, 25, 400, 5, 'power'));
         }
-        if (type !== 'repeat') {
+        if (type !== 'repeat' && type !== 'recovery') {
           fields.appendChild(makeField('Varighed (min)', 'number',
             values.minutes || (type === 'break' ? 2 : 5), 0.5, 720, 0.5, 'minutes'));
         }
@@ -1737,7 +1824,8 @@
           blocks.textContent = '';
           blocks.classList.remove('has-blocks');
           previous.forEach(function (block) {
-            var values = {label: block.label, minutes: block.minutes, count: block.count,
+            var values = {label: block.label, minutes: block.minutes, seconds: block.seconds,
+              count: block.count,
               work_seconds: block.work_seconds, recovery_seconds: block.recovery_seconds};
             var type = block.type;
             if (type === 'break' && powerMode) {
@@ -1788,6 +1876,7 @@
         var pulseSource = document.querySelector('input[name="pulse-source"]:checked').value;
         return {
           name: workoutLabel(),
+          profile: activeProfile,
           mode: workoutMode,
           pulse_limit: pulseLimitBox.checked,
           max_pulse_source: useBirthYear ? 'age' : 'manual',
@@ -1821,6 +1910,8 @@
               item.work_percent = integer(row, 'work-percent');
               item.recovery_percent = integer(row, 'recovery-percent');
             }
+          } else if (item.type === 'recovery') {
+            item.seconds = integer(row, 'seconds');
           } else {
             item.minutes = parseFloat(row.querySelector('.minutes').value);
           }
@@ -2180,7 +2271,9 @@
             radio.disabled = busy;
           });
           maxPulse.disabled = busy || maxPulseSource() === 'birth_year';
-          birthYearInput.disabled = busy || maxPulseSource() !== 'birth_year';
+          birthYearInput.disabled = busy;
+          sexSelect.disabled = busy;
+          weightInput.disabled = busy;
           document.querySelectorAll('input[name="max-pulse-source"]').forEach(function (radio) {
             radio.disabled = busy;
           });
@@ -2253,6 +2346,9 @@
       });
       document.getElementById('add-ramp').addEventListener('click', function () {
         addBlock('ramp');
+      });
+      document.getElementById('add-recovery').addEventListener('click', function () {
+        addBlock('recovery');
       });
       Array.prototype.forEach.call(
         document.querySelectorAll('input[name="workout-mode"]'),
@@ -2333,6 +2429,9 @@
         updateSummary();
       });
       birthYearInput.addEventListener('change', saveProfileMaxPulse);
+      birthYearInput.addEventListener('change', saveProfileDetails);
+      sexSelect.addEventListener('change', saveProfileDetails);
+      weightInput.addEventListener('change', saveProfileDetails);
       Array.prototype.forEach.call(
         document.querySelectorAll('input[name="max-pulse-source"]'),
         function (radio) {
