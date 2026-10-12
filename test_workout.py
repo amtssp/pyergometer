@@ -917,6 +917,48 @@ class WatchStartTests(unittest.TestCase):
         self.assertIn('Ingen puls fra uret', body['error'])
 
 
+class DemoLiveUpdateTests(unittest.TestCase):
+    def test_shortening_a_block_during_a_demo_moves_the_demo_on(self):
+        server = WorkoutServer(('127.0.0.1', 0), simulate=True)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+
+        def stop():
+            server.shutdown()
+            thread.join()
+            server.server_close()
+        self.addCleanup(stop)
+
+        def post(path, plan):
+            connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+            connection.request('POST', path, body=json.dumps(plan), headers={
+                'Content-Type': 'application/json',
+                'Origin': 'http://127.0.0.1:%d' % server.server_port})
+            response = connection.getresponse()
+            response.read()
+            connection.close()
+            return response.status
+
+        def plan(minutes):
+            return {'max_pulse': 180, 'blocks': [
+                {'type': 'interval', 'minutes': minutes, 'percent': 70}, {'type': 'recovery'}]}
+
+        self.assertEqual(post('/api/demo', plan(5)), 200)
+        # Pretend the demo has run for 150 seconds of the 5-minute interval.
+        server.demo_started_at -= datetime.timedelta(seconds=150)
+        self.assertEqual(post('/api/update', plan(2)), 200)
+
+        connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+        connection.request('GET', '/api/chart')
+        chart = json.loads(connection.getresponse().read().decode('utf-8'))
+        connection.close()
+        current = [block for block in chart['plan']['blocks']
+                   if block['start'] <= chart['elapsed'] < block['end']]
+        self.assertTrue(chart['active'])
+        self.assertEqual(current[0]['type'], 'recovery')
+
+
 class NetworkOriginTests(unittest.TestCase):
     def start_server(self, host):
         server = WorkoutServer((host, 0))

@@ -978,8 +978,10 @@
         row.classList.toggle('off', !maximum || !pulseLimitBox.checked);
       }
 
+      // A running workout or livedemo: both take plan changes and +/- at once.
       function liveWorkoutRunning() {
-        return latestChart && latestChart.mode === 'real' && latestChart.active;
+        return latestChart && latestChart.active &&
+          (latestChart.mode === 'real' || latestChart.mode === 'demo');
       }
 
       // Steps for the +/- buttons: pulse targets in percent of max, loads in watts.
@@ -1238,7 +1240,9 @@
       }
 
       function renderChart(data) {
-        var activeWorkout = data && data.mode === 'real' && data.active;
+        // A running workout or livedemo is drawn from its own plan, so the chart, the
+        // progress line and the heart agree even if the form has been edited since.
+        var activeWorkout = data && data.mode !== 'preview' && data.active;
         var plan = editedChartPlan || (activeWorkout && data.plan
           ? data.plan
           : chartPlanFromForm());
@@ -1499,7 +1503,7 @@
 
         if (data && data.mode === 'demo') {
           chartMessage.textContent = data.active
-            ? 'Livedemo: målingerne er simulerede. Redigering gælder træningsplanen, ikke den igangværende demo.'
+            ? 'Livedemo: målingerne er simulerede. Grafen viser demoens plan; ændringer gælder næste gang.'
             : 'Livedemo afsluttet. De røde målinger er simulerede, og planen kan redigeres.';
         } else if (data && data.mode === 'real' && data.active && data.limited) {
           chartMessage.textContent = 'Pulsgrænsen er nået, så belastningen sænkes midlertidigt, ' +

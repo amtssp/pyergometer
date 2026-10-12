@@ -761,6 +761,21 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         self.demo_elapsed = 0
         self.demo_points = []
 
+    def demo_running(self):
+        if self.demo_started_at is None or self.chart_plan is None:
+            return False
+        self.advance_demo()
+        return self.demo_elapsed < self.chart_plan['duration']
+
+    def update_demo_plan(self, chart_plan):
+        """Continue a running livedemo with a changed plan from where it has got to."""
+        self.chart_plan = chart_plan
+        self.demo_block_index = 0
+        blocks = chart_plan['blocks']
+        while (self.demo_block_index + 1 < len(blocks) and
+               self.demo_elapsed >= blocks[self.demo_block_index]['end']):
+            self.demo_block_index += 1
+
     def advance_demo(self):
         if self.demo_started_at is None or self.chart_plan is None:
             return
@@ -1188,6 +1203,11 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {'error': str(error)})
                 return
             self.server.refresh_process()
+            if self.server.process is None and self.server.demo_running():
+                # A livedemo takes plan changes at once, like a real workout.
+                self.server.update_demo_plan(build_chart_plan(request))
+                self._send_json(200, {'updated': True})
+                return
             if self.server.process is None:
                 self._send_json(409, {'error': 'No workout is currently running'})
                 return
