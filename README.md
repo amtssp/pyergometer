@@ -144,6 +144,28 @@ automatically while the pulse is at or above 95 % of it. Both kinds support
 steady steps, ramps that change linearly over their duration, and repeat
 groups. The heart above the chart always shows the measured pulse.
 
+Fitness tests
+-------------
+
+Two shared templates measure fitness; fill in birth year, sex and weight on
+the user profile first. Results are saved in the Git-ignored
+``training_history.json`` together with a summary of every workout (pulse,
+watt, energy, watt per heartbeat in settled pulse intervals and every
+"+ Pulsfald" pulse-drop block, where the rider sits still for 60 seconds).
+
+* ``Test · Åstrand (submaksimal)``: 3 minutes warm-up, 6 minutes at a fixed
+  load (suggested 75 W for women and 100 W for men) and a pulse drop. VO2max is
+  estimated from the mean pulse in minutes 5 and 6 with the Åstrand-Ryhming
+  nomogram equations (Buono et al. 1989; load in kpm/min = W x 6.12) and
+  Åstrand's age correction factors (1.10 at 15 to 0.65 at 65, interpolated;
+  above 65 the trend is continued, which is uncertain). The test is only
+  valid with a steady pulse (at most 5 beats between minutes 5 and 6) between
+  120 and 170. Typical error is about 10-15 % against a laboratory test.
+* ``Test · Maksimal rampe``: 5 minutes at 50 W, then 20 W more per minute until
+  the rider stops. Reports the best whole minute (MAP), FTP as 75 % of it, the
+  highest pulse and VO2max estimated as 10.8 x W/kg + 7. The pulse limit is
+  switched off; only ride it if you are used to maximal efforts.
+
 Supported bikes are listed in ``devices.py``: currently a Kettler on a serial
 RS-232 port and a simulation. Choose the bike type on the page under the bike
 settings, or pass ``--device-type`` on the command line (``--simulate`` is short

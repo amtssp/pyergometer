@@ -222,6 +222,16 @@
     /* Chart */
     #summary { font-size: .92rem; }
     #pulse-chart { display: block; width: 100%; min-height: 18rem; touch-action: none; }
+    .test-guide {
+      margin: .25rem 0 .5rem;
+      padding: .5rem .75rem;
+      border-radius: 10px;
+      background: #e8f1fb;
+      color: #174a7a;
+      font-size: .92rem;
+      font-weight: 600;
+    }
+    .test-guide.warn { background: #fff1dc; color: #8a4b00; }
     #chart-message {
       min-height: 1.4em;
       font-size: .92rem;
@@ -434,6 +444,7 @@
       <input id="pulse-limit" type="checkbox" checked>
       <span id="pulse-limit-text">Pulsgrænse</span>
     </label>
+    <div id="test-guide" class="test-guide" hidden aria-live="polite"></div>
     <div id="chart-message" class="muted" aria-live="polite">Grafen følger træningsplanen og opdateres én gang i sekundet.</div>
     <div class="chart-row">
       <svg id="pulse-chart" viewBox="0 0 900 400" role="img"
@@ -473,6 +484,8 @@
             <option value="">Vælg fælles træningspas</option>
             <option value="hiit-30-30">Puls · HIIT 30/30 (13 gentagelser)</option>
             <option value="vo2max-5x5">Watt · VO₂ Max 5 × 5</option>
+            <option value="astrand">Test · Åstrand (submaksimal)</option>
+            <option value="ramp-test">Test · Maksimal rampe</option>
           </select>
         </label>
         <button id="apply-template" type="button">Indlæs</button>
@@ -1233,6 +1246,84 @@
         return steps[steps.length - 1];
       }
 
+      function clock(seconds) {
+        var remainder = Math.floor(seconds) % 60;
+        return Math.floor(seconds / 60) + ':' + (remainder < 10 ? '0' : '') + remainder;
+      }
+
+      // Guidance during fitness tests and pulse drops, in the workout's own times
+      // (the times on the chart's x-axis).
+      var ASTRAND_SETTLE = 240;
+      function updateTestGuide(data) {
+        var guide = document.getElementById('test-guide');
+        var points = data && data.active && data.mode !== 'preview' ? data.points || [] : [];
+        var last = points.length ? points[points.length - 1] : null;
+        var block = last && ((data.plan && data.plan.blocks) || []).filter(function (item) {
+          return last.elapsed >= item.start && last.elapsed < item.end;
+        })[0];
+        if (!block || (!block.test && block.type !== 'recovery')) {
+          guide.hidden = true;
+          return;
+        }
+        var average = function (from, to) {
+          var pulses = points.filter(function (point) {
+            return point.elapsed >= from && point.elapsed < to && point.pulse >= 20;
+          }).map(function (point) { return point.pulse; });
+          return pulses.length
+            ? Math.round(pulses.reduce(function (a, b) { return a + b; }, 0) / pulses.length) : null;
+        };
+        var now = last.elapsed;
+        var text;
+        var warn = false;
+        if (block.test === 'astrand') {
+          var from = block.start + ASTRAND_SETTLE;
+          var middle = from + 60;
+          if (now < from) {
+            text = 'Åstrand-test: hold en jævn kadence (ca. 60 omdr./min), mens pulsen stabiliseres. ' +
+              'Pulsen måles fra ' + clock(from) + ' til ' + clock(block.end) + '.';
+            if (now >= block.start + 180 && last.pulse >= 20 && (last.pulse < 115 || last.pulse > 170)) {
+              warn = true;
+              text += ' Pulsen (' + last.pulse + ') ser ud til at ende ' +
+                (last.pulse < 115 ? 'under 120: vælg højere' : 'over 170: vælg lavere') +
+                ' belastning næste gang.';
+            }
+          } else if (now < middle) {
+            text = 'Måler puls ' + clock(from) + '-' + clock(middle) + ' · gennemsnit indtil nu: ' +
+              (average(from, middle) || '–') + '. Hold kadencen jævn.';
+          } else {
+            var first = average(from, middle);
+            var second = average(middle, block.end);
+            var difference = first && second ? Math.abs(second - first) : null;
+            text = 'Måler puls ' + clock(middle) + '-' + clock(block.end) + ' · ' + clock(from) + '-' +
+              clock(middle) + ': ' + (first || '–') + ' · nu: ' + (second || '–') +
+              (difference !== null ? ' · forskel ' + difference + ' (højst 5)' : '') + '.';
+            if (difference !== null && difference > 5) {
+              warn = true;
+              text += ' Pulsen er ikke stabil endnu.';
+            }
+            if (second && (second < 120 || second > 170)) {
+              warn = true;
+              text += ' Pulsen skal ligge mellem 120 og 170, for at testen er gyldig.';
+            }
+          }
+        } else if (block.test === 'ramp') {
+          var peak = points.filter(function (point) { return point.elapsed >= block.start; })
+            .reduce(function (highest, point) { return Math.max(highest, point.pulse || 0); }, 0);
+          var watts = Math.floor(block.start_value + (block.end_value - block.start_value) *
+            (now - block.start) / (block.end - block.start) + 0.5);
+          text = 'Rampetest: nu ' + watts + ' W, +20 W i minuttet. Kør så længe du kan, og tryk Stop, ' +
+            'når du ikke kan mere. Højeste puls indtil nu: ' + (peak || '–') + '.';
+        } else {
+          var startPulse = average(block.start - 3, block.start + 2);
+          text = 'Pulsfald: sid stille til ' + clock(Math.min(block.end, block.start + 60)) +
+            ' · puls ved start (' + clock(block.start) + '): ' + (startPulse || '–') + ' · nu: ' +
+            (last.pulse >= 20 ? last.pulse : '–') + '.';
+        }
+        guide.textContent = text;
+        guide.classList.toggle('warn', warn);
+        guide.hidden = false;
+      }
+
       function formatTickTime(seconds, step) {
         if (step >= 60) return String(Math.round(seconds / 60));
         var remainder = seconds % 60;
@@ -1667,6 +1758,7 @@
             latestChart = data;
             renderChart(data);
             updatePulseBadge(data);
+            updateTestGuide(data);
             updateAdjustButtons();
             updateWorkoutName();
           }
@@ -1714,6 +1806,7 @@
         row.className = 'block';
         row.dataset.type = type;
         if (values.label) row.dataset.label = values.label;
+        if (values.test) row.dataset.test = values.test;
 
         var title = document.createElement('h3');
         title.textContent = values.label || (
@@ -1811,6 +1904,26 @@
         updateSummary();
       }
 
+      function astrandTemplate() {
+        // Classic suggestion: about 75 W for women and 100 W for men; adjust so that the
+        // pulse ends between 120 and 170.
+        var profile = profilesByName[activeProfile] || {};
+        var load = profile.sex === 'male' ? 100 : 75;
+        return {
+          mode: 'power',
+          message: 'Åstrand-testen er klar: 3 min opvarmning, 6 min ved ' + load + ' W (3:00-9:00) og ' +
+            'pulsfald (9:00-10:00). Pulsen måles fra 7:00 til 9:00, når den har stabiliseret sig, og ' +
+            'skal ende mellem 120 og 170 (forslag: kvinder 75 W, mænd 100 W, mere hvis du er i god ' +
+            'form). Hold en jævn kadence på ca. 60 omdr./min.',
+          blocks: [
+            {type: 'interval', label: 'Opvarmning', minutes: 3, power: Math.max(25, Math.round(load / 10) * 5)},
+            {type: 'interval', label: 'Åstrand-test: 6 min ved fast belastning; pulsen måles de sidste 2 min',
+             minutes: 6, power: load, test: 'astrand'},
+            {type: 'recovery', seconds: 60}
+          ]
+        };
+      }
+
       function setWorkoutMode(mode, convertBlocks) {
         var previous = convertBlocks ? readBlocks() : null;
         workoutMode = mode === 'power' ? 'power' : 'pulse';
@@ -1829,7 +1942,7 @@
           blocks.classList.remove('has-blocks');
           previous.forEach(function (block) {
             var values = {label: block.label, minutes: block.minutes, seconds: block.seconds,
-              count: block.count,
+              count: block.count, test: powerMode ? block.test : undefined,
               work_seconds: block.work_seconds, recovery_seconds: block.recovery_seconds};
             var type = block.type;
             if (type === 'break' && powerMode) {
@@ -1903,6 +2016,7 @@
         Array.prototype.forEach.call(blocks.querySelectorAll('.block'), function (row) {
           var item = {type: row.dataset.type};
           if (row.dataset.label) item.label = row.dataset.label;
+          if (row.dataset.test) item.test = row.dataset.test;
           if (item.type === 'repeat') {
             item.count = integer(row, 'count');
             item.work_seconds = integer(row, 'work-seconds');
@@ -2233,6 +2347,31 @@
       var statusFailures = 0;
       var DISCONNECTED_TEXT = 'Mistede forbindelsen til pyergometer-serveren. Prøver igen …';
 
+      function danishNumber(value) {
+        return String(value).replace('.', ',');
+      }
+
+      function formatTestResults(tests) {
+        return (tests || []).map(function (test) {
+          var text;
+          if (test.type === 'astrand') {
+            text = ' Åstrand-test' + (test.valid ? '' : ' (ikke gyldig)') + ':';
+            if (test.vo2max) {
+              text += ' kondital ' + danishNumber(test.vo2max) + ' ml/kg/min';
+            }
+            if (test.pulse) text += ' (puls ' + test.pulse + ' ved ' + test.watts + ' W)';
+          } else {
+            text = ' Rampetest' + (test.valid ? '' : ' (ikke gyldig)') + ':';
+            if (test.map_watts) {
+              text += ' bedste minut ' + test.map_watts + ' W, FTP ' + test.ftp_watts + ' W';
+            }
+            if (test.max_pulse) text += ', max-puls ' + test.max_pulse;
+            if (test.vo2max) text += ', kondital ' + danishNumber(test.vo2max) + ' ml/kg/min';
+          }
+          return text + (test.problems && test.problems.length ? '. ' + test.problems.join(' ') : '.');
+        }).join('');
+      }
+
       function refreshStatus() {
         fetch('/api/status').then(function (response) {
           return response.json();
@@ -2324,7 +2463,8 @@
             status.textContent = data.error;
           } else if (data.exit_code === 0) {
             status.className = 'success';
-            status.textContent = 'Træningen er færdig. Logfil: data/' + data.log;
+            status.textContent = 'Træningen er færdig.' + formatTestResults(data.tests) +
+              ' Logfil: data/' + data.log;
           } else if (data.exit_code !== null) {
             status.className = 'error';
             status.textContent = 'Træningen stoppede med fejlkode ' + data.exit_code +
@@ -2400,6 +2540,19 @@
               },
               {type: 'ramp', label: 'Nedkøling', minutes: 8, start_power: 150, end_power: 105}
             ]
+          },
+          'astrand': astrandTemplate(),
+          'ramp-test': {
+            mode: 'power',
+            pulse_limit: false,
+            message: 'Rampetesten er klar: 5 min ved 50 W, derefter stiger belastningen 20 W ' +
+              'i minuttet. Kør til du ikke kan mere, og tryk så Stop. Pulsgrænsen er slået fra. ' +
+              'Tal med din læge først, hvis du ikke er vant til at presse dig helt.',
+            blocks: [
+              {type: 'interval', label: 'Opvarmning', minutes: 5, power: 50},
+              {type: 'ramp', label: 'Rampe: kør til du ikke kan mere, og tryk så Stop',
+               minutes: 30, start_power: 50, end_power: 650, test: 'ramp'}
+            ]
           }
         };
         var selectedTemplate = templates[builtinTemplate.value];
@@ -2411,6 +2564,8 @@
         blocks.textContent = '';
         blocks.classList.remove('has-blocks');
         setWorkoutMode(selectedTemplate.mode, false);
+        // A maximal test must be allowed to reach the maximum pulse.
+        pulseLimitBox.checked = selectedTemplate.pulse_limit !== false;
         selectedTemplate.blocks.forEach(function (block) {
           addBlock(block.type, block);
         });

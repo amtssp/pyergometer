@@ -138,6 +138,7 @@ class Ergometer:
                 'pulse': int(self.device.pulse),
                 'target_pulse': int(step['pulse']),
                 'target_power': int(step['power']),
+                'rpm': int(self.device.rpm),
                 'power': int(self.device.power),
                 'limited': self.limit_reduction > 0,
                 'recovery': recovery

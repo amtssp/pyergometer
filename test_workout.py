@@ -16,6 +16,10 @@ from workout import (
     _sampled_points,
     normalize_preset_plan,
     summarize_workout,
+    analyze_astrand,
+    analyze_ramp,
+    astrand_age_factor,
+    astrand_vo2max_litres,
     update_profile_details,
     pulse_limit,
     build_chart_plan,
@@ -1350,6 +1354,92 @@ class FitnessDataTests(unittest.TestCase):
         self.assertEqual(summary['max_pulse'], 140)
         self.assertEqual(summary['avg_power'], 150)
         self.assertEqual(summary['energy_kj'], 45.0)
+
+
+class FitnessTestTests(unittest.TestCase):
+    profile = {'birth_year': datetime.date.today().year - 50, 'sex': 'male', 'weight_kg': 80.0}
+
+    def astrand_samples(self, pulse5, pulse6, watts=150, limited=False):
+        block = {'start': 180, 'end': 540, 'index': 1}
+        samples = [{'elapsed': t, 'pulse': 120, 'power': 75} for t in range(180)]
+        for t in range(360):
+            pulse = pulse5 if t < 300 else pulse6
+            samples.append({'elapsed': 180 + t, 'pulse': pulse, 'power': watts, 'limited': limited})
+        return samples, block
+
+    def test_astrand_formula_and_age_factor(self):
+        # 150 W = 918 kpm/min; the nomogram gives about 3.4 L/min at pulse 150 for a man.
+        self.assertAlmostEqual(astrand_vo2max_litres(150, 150, 'male'), 3.358, places=2)
+        # Women have a higher pulse at the same load, so the same pulse means a higher VO2max.
+        self.assertGreater(astrand_vo2max_litres(150, 150, 'female'), 3.358)
+        self.assertEqual(astrand_age_factor(25), 1.0)
+        self.assertEqual(astrand_age_factor(50), 0.75)
+        self.assertAlmostEqual(astrand_age_factor(37), 0.854, places=3)
+        self.assertAlmostEqual(astrand_age_factor(67), 0.638, places=3)
+
+    def test_valid_astrand_test(self):
+        samples, block = self.astrand_samples(148, 150)
+
+        result = analyze_astrand(samples, block, self.profile)
+
+        self.assertTrue(result['valid'], result['problems'])
+        self.assertEqual((result['watts'], result['pulse'], result['age_factor']), (150, 149, 0.75))
+        expected = astrand_vo2max_litres(150, 149, 'male') * 0.75 * 1000 / 80
+        self.assertAlmostEqual(result['vo2max'], round(expected, 1))
+
+    def test_astrand_problems_make_the_test_invalid(self):
+        unstable = analyze_astrand(*self.astrand_samples(140, 152), profile=self.profile)
+        too_low = analyze_astrand(*self.astrand_samples(105, 106), profile=self.profile)
+        limited = analyze_astrand(*self.astrand_samples(148, 150, limited=True), profile=self.profile)
+        no_profile = analyze_astrand(*self.astrand_samples(148, 150), profile={})
+        short = analyze_astrand(self.astrand_samples(148, 150)[0][:400], {'start': 180, 'end': 540},
+                                self.profile)
+
+        self.assertIn('ikke stabil', unstable['problems'][0])
+        self.assertIn('under 120', too_low['problems'][0])
+        self.assertIn('Pulsgrænsen', limited['problems'][0])
+        self.assertIn('fødselsår, køn og vægt', no_profile['problems'][0])
+        self.assertNotIn('vo2max', no_profile)
+        self.assertIn('ikke gennemført', short['problems'][0])
+        for result in (unstable, too_low, limited, no_profile, short):
+            self.assertFalse(result['valid'])
+
+    def test_ramp_test_gives_map_ftp_and_vo2max(self):
+        block = {'start': 300, 'end': 2100, 'index': 1}
+        samples = []
+        for t in range(600):          # 10 minutes of a 20 W/min ramp from 50 W, then exhausted
+            power = 50 + t // 3
+            samples.append({'elapsed': 300 + t, 'pulse': 110 + t // 10, 'power': power,
+                            'target_power': power, 'rpm': 80})
+        samples.append({'elapsed': 900, 'pulse': 171, 'power': 250, 'target_power': 250, 'rpm': 20})
+
+        result = analyze_ramp(samples, block, self.profile)
+
+        self.assertTrue(result['valid'], result['problems'])
+        self.assertEqual(result['peak_watts'], 249)
+        self.assertEqual(result['map_watts'], 240)
+        self.assertEqual(result['ftp_watts'], 180)
+        self.assertEqual(result['max_pulse'], 171)
+        self.assertEqual(result['vo2max'], round(10.8 * 239.5 / 80 + 7, 1))
+
+    def test_short_ramp_gives_no_result(self):
+        samples = [{'elapsed': 300 + t, 'pulse': 120, 'power': 60, 'rpm': 80} for t in range(100)]
+
+        result = analyze_ramp(samples, {'start': 300, 'end': 2100, 'index': 1}, self.profile)
+
+        self.assertFalse(result['valid'])
+        self.assertIn('under 3 minutter', result['problems'][0])
+
+    def test_test_marker_only_on_watt_steps_and_ramps(self):
+        chart = build_chart_plan({'mode': 'power', 'blocks': [
+            {'type': 'interval', 'minutes': 6, 'power': 100, 'test': 'astrand'}]})
+        self.assertEqual(chart['blocks'][0]['test'], 'astrand')
+        for plan in ({'mode': 'power', 'blocks': [{'type': 'interval', 'minutes': 6, 'power': 100,
+                                                   'test': 'marathon'}]},
+                     {'max_pulse': 180, 'blocks': [{'type': 'interval', 'minutes': 6, 'percent': 70,
+                                                    'test': 'astrand'}]}):
+            with self.assertRaises(ValueError):
+                build_chart_plan(plan)
 
 
 class Python3ControllerTests(unittest.TestCase):

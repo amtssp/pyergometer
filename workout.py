@@ -38,6 +38,7 @@ WATCH_START_TIMEOUT = 30
 STARTING_MESSAGE = ('Træningen er ved at starte og venter på pulsen fra uret '
                     '(op til %d sekunder).' % WATCH_START_TIMEOUT)
 BUILTIN_TEMPLATE_NAMES = ('Puls · HIIT 30/30 (13 gentagelser)', 'Watt · VO₂ Max 5 × 5',
+                          'Test · Åstrand (submaksimal)', 'Test · Maksimal rampe',
                           'HIIT 30/30 (13 gentagelser)')
 
 try:
@@ -521,6 +522,12 @@ def build_chart_plan(plan):
         else:
             raise ValueError('%s must be an interval, break, ramp, recovery or repeat' % label)
 
+        test = block.get('test')
+        if test is not None:
+            if test not in TEST_TYPES or block_type not in ('interval', 'ramp') or mode != 'power':
+                raise ValueError('%s: a fitness test needs a watt step or watt ramp' % label)
+            for entry, unused in entries:
+                entry['test'] = test
         for entry, duration in entries:
             entry.update({'index': index, 'start': elapsed, 'end': elapsed + duration})
             chart_blocks.append(entry)
@@ -600,6 +607,141 @@ def summarize_workout(samples, chart_plan):
     if steady_count >= EFFICIENCY_MIN_SAMPLES and steady_pulse:
         summary['watt_per_beat'] = round(float(steady_power) / steady_pulse, 3)
     return summary
+
+
+# ---------------------------------------------------------------- fitness tests
+TEST_TYPES = ('astrand', 'ramp')
+
+# Astrand (1960) age correction factors for the Astrand-Ryhming nomogram, as
+# tabulated by e.g. topendsports.com. Values between ages are interpolated;
+# above 65 the 60-65 slope is continued, which is uncertain.
+ASTRAND_AGE_FACTORS = ((15, 1.10), (25, 1.00), (35, 0.87), (40, 0.83), (45, 0.78),
+                       (50, 0.75), (55, 0.71), (60, 0.68), (65, 0.65))
+ASTRAND_MIN_PULSE = 120
+ASTRAND_MAX_PULSE = 170
+ASTRAND_STEADY_BEATS = 5
+RAMP_MIN_SECONDS = 180
+RAMP_PEDALLING_RPM = 40
+
+
+def astrand_age_factor(age):
+    points = ASTRAND_AGE_FACTORS
+    if age <= points[0][0]:
+        return points[0][1]
+    for (age_low, low), (age_high, high) in zip(points, points[1:]):
+        if age <= age_high:
+            return low + (high - low) * (age - age_low) / float(age_high - age_low)
+    (age_low, low), (age_high, high) = points[-2], points[-1]
+    slope = (high - low) / float(age_high - age_low)
+    return max(0.5, high + slope * (age - age_high))
+
+
+def astrand_vo2max_litres(watts, pulse, sex):
+    """Astrand-Ryhming nomogram as equations (Buono et al. 1989), in litres O2 per minute.
+
+    The workload is in kpm/min (watts x 6.12) and the pulse is the steady pulse
+    at the end of 6 minutes of cycling at that load.
+    """
+    kpm = watts * 6.12
+    if sex == 'female':
+        return (0.00193 * kpm + 0.326) / (0.769 * pulse - 56.1) * 100
+    return (0.00212 * kpm + 0.299) / (0.769 * pulse - 48.5) * 100
+
+
+def _profile_age(profile):
+    if profile and profile.get('birth_year'):
+        return _utcnow().year - profile['birth_year']
+    return None
+
+
+def _mean(values):
+    return float(sum(values)) / len(values) if values else None
+
+
+def analyze_astrand(samples, block, profile):
+    """Fitness (VO2max) from the steady pulse in minutes 5 and 6 of a 6-minute load."""
+    start = block['start']
+    result = {'type': 'astrand', 'valid': False, 'problems': []}
+    minute5 = [s for s in samples if start + 240 <= s['elapsed'] < start + 300 and s.get('pulse', 0) >= 20]
+    minute6 = [s for s in samples if start + 300 <= s['elapsed'] < start + 360 and s.get('pulse', 0) >= 20]
+    if len(minute5) < 45 or len(minute6) < 45:
+        result['problems'].append('Testen blev ikke gennemført: der skal cykles 6 minutter ved fast belastning.')
+        return result
+    pulse5 = _mean([s['pulse'] for s in minute5])
+    pulse6 = _mean([s['pulse'] for s in minute6])
+    pulse = (pulse5 + pulse6) / 2
+    watts = _mean([s.get('power', s.get('target_power', 0)) for s in minute5 + minute6])
+    result.update({'watts': int(round(watts)), 'pulse': int(round(pulse)),
+                   'pulse_minute5': int(round(pulse5)), 'pulse_minute6': int(round(pulse6))})
+    if abs(pulse6 - pulse5) > ASTRAND_STEADY_BEATS:
+        result['problems'].append('Pulsen var ikke stabil (over %d slags forskel mellem minut 5 og 6).'
+                                  % ASTRAND_STEADY_BEATS)
+    if pulse < ASTRAND_MIN_PULSE:
+        result['problems'].append('Pulsen var under %d: gentag testen med højere belastning.'
+                                  % ASTRAND_MIN_PULSE)
+    elif pulse > ASTRAND_MAX_PULSE:
+        result['problems'].append('Pulsen var over %d: gentag testen med lavere belastning.'
+                                  % ASTRAND_MAX_PULSE)
+    if any(s.get('limited') for s in minute5 + minute6):
+        result['problems'].append('Pulsgrænsen sænkede belastningen undervejs.')
+    age = _profile_age(profile)
+    sex = profile.get('sex') if profile else None
+    weight = profile.get('weight_kg') if profile else None
+    if not age or not sex or not weight:
+        result['problems'].append('Udfyld fødselsår, køn og vægt på brugerprofilen for at få et kondital.')
+        return result
+    factor = astrand_age_factor(age)
+    litres = astrand_vo2max_litres(watts, pulse, sex) * factor
+    result.update({'age': age, 'age_factor': round(factor, 3), 'vo2max_litres': round(litres, 2),
+                   'vo2max': round(litres * 1000 / weight, 1)})
+    result['valid'] = not result['problems']
+    return result
+
+
+def analyze_ramp(samples, block, profile):
+    """Maximal power from a ramp ridden to exhaustion, with FTP and estimated VO2max."""
+    result = {'type': 'ramp', 'valid': False, 'problems': []}
+    riding = [s for s in samples if block['start'] <= s['elapsed'] < block['end'] and
+              s.get('rpm', RAMP_PEDALLING_RPM) >= RAMP_PEDALLING_RPM]
+    if not riding or riding[-1]['elapsed'] - block['start'] < RAMP_MIN_SECONDS:
+        result['problems'].append('Rampen varede under 3 minutter, så testen giver ikke et resultat.')
+        return result
+    by_second = dict((s['elapsed'], s.get('power', s.get('target_power', 0))) for s in riding)
+    best = 0
+    last_second = max(by_second)
+    for second in sorted(by_second):
+        if second + 59 > last_second:
+            break  # only whole minutes; a short last window would overstate the power
+        window = [by_second[t] for t in range(second, second + 60) if t in by_second]
+        if len(window) >= 50:
+            best = max(best, _mean(window))
+    pulses = [s['pulse'] for s in samples if s['elapsed'] >= block['start'] and s.get('pulse', 0) >= 20]
+    result.update({
+        'seconds': riding[-1]['elapsed'] - block['start'],
+        'peak_watts': max(s.get('target_power', 0) for s in riding),
+        'map_watts': int(round(best)),
+        'ftp_watts': int(round(best * 0.75)),
+        'max_pulse': max(pulses) if pulses else None})
+    weight = profile.get('weight_kg') if profile else None
+    if not weight:
+        result['problems'].append('Udfyld vægt på brugerprofilen for at få et kondital.')
+        return result
+    # Common estimate from maximal cycling power: VO2max = 10.8 x W/kg + 7 (ml/kg/min).
+    result['vo2max'] = round(10.8 * best / weight + 7, 1)
+    result['valid'] = not result['problems']
+    return result
+
+
+def analyze_tests(samples, chart_plan, profile):
+    results = []
+    seen = set()
+    for block in chart_plan.get('blocks', []):
+        test = block.get('test')
+        if test and (block['index'], test) not in seen:
+            seen.add((block['index'], test))
+            analyze = analyze_astrand if test == 'astrand' else analyze_ramp
+            results.append(analyze(samples, block, profile))
+    return results
 
 
 def read_history(path):
@@ -725,6 +867,7 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         self.history_file = os.path.join(os.path.dirname(__file__), 'training_history.json')
         self.workout_profile = None
         self.workout_started = None
+        self.last_tests = []
         self.chart_plan = None
         self.chart_live_path = None
         self.chart_control_path = None
@@ -845,6 +988,10 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
                 'log': os.path.basename(self.log_json) if self.log_json else None
             }
             session.update(summarize_workout(samples, self.chart_plan))
+            profile = next((item for item in read_profiles(self.profiles_file, self.presets_file)
+                            if item['name'] == self.workout_profile), None)
+            session['tests'] = analyze_tests(samples, self.chart_plan, profile)
+            self.last_tests = session['tests']
             append_history(self.history_file, session)
         except (IOError, OSError, ValueError, KeyError, TypeError) as error:
             sys.stderr.write('Could not save the workout summary: %s\n' % error)
@@ -987,6 +1134,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 'exit_code': self.server.last_exit_code,
                 'error': self.server.last_error,
                 'log': os.path.basename(self.server.log_json) if self.server.log_json else None,
+                'tests': self.server.last_tests,
                 'heart_rate': heart_rate
             })
             return
@@ -1416,6 +1564,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         profile = request.get('profile')
         self.server.workout_profile = profile.strip() if isinstance(profile, text_types) else None
         self.server.workout_started = datetime.datetime.now().replace(microsecond=0).isoformat()
+        self.server.last_tests = []
         self.server.chart_live_path = live_log_path
         self.server.chart_control_path = live_control_path
         self.server.heart_rate_monitor = monitor
