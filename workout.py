@@ -1,4 +1,6 @@
 import datetime
+import glob
+import io
 import json
 import math
 import os
@@ -35,11 +37,35 @@ PULSE_LIMIT_PERCENT = 95
 # Seconds a start waits for the first watch pulse: finding and connecting the
 # watch takes up to about 15 seconds on a Raspberry Pi.
 WATCH_START_TIMEOUT = 30
-STARTING_MESSAGE = ('Træningen er ved at starte og venter på pulsen fra uret '
-                    '(op til %d sekunder).' % WATCH_START_TIMEOUT)
-BUILTIN_TEMPLATE_NAMES = ('Puls · HIIT 30/30 (13 gentagelser)', 'Watt · VO₂ Max 5 × 5',
-                          'Test · Åstrand (submaksimal)', 'Test · Maksimal rampe',
-                          'HIIT 30/30 (13 gentagelser)')
+# Messages the page shows to the rider are sent as a code with parameters, so the
+# page can show them in the rider's language; 'error' is an English fallback.
+STARTING_ERROR = {
+    'error': 'The workout is starting and waits up to %d seconds for the watch pulse'
+             % WATCH_START_TIMEOUT,
+    'code': 'starting',
+    'params': {'seconds': WATCH_START_TIMEOUT}}
+LANGUAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lang')
+TEMPLATE_NAME_PREFIX = 'template.name.'
+# The name of the HIIT template before it got its "Puls · " prefix.
+LEGACY_TEMPLATE_NAMES = ('HIIT 30/30 (13 gentagelser)',)
+
+
+def read_languages():
+    """All page texts by language code, from lang/<code>.json."""
+    languages = {}
+    for path in sorted(glob.glob(os.path.join(LANGUAGE_DIR, '*.json'))):
+        with io.open(path, encoding='utf-8') as language_file:
+            languages[os.path.splitext(os.path.basename(path))[0]] = json.load(language_file)
+    return languages
+
+
+def builtin_template_names():
+    """Names of the shared templates in every language; saved workouts may not use them."""
+    names = set(LEGACY_TEMPLATE_NAMES)
+    for texts in read_languages().values():
+        names.update(value for key, value in texts.items()
+                     if key.startswith(TEMPLATE_NAME_PREFIX))
+    return names
 
 try:
     integer_types = (int, long)
@@ -149,7 +175,7 @@ def save_preset(path, name, plan):
     name = name.strip()
     if not name or len(name) > 80:
         raise ValueError('Preset name must contain between 1 and 80 characters')
-    if name.lower() in (template_name.lower() for template_name in BUILTIN_TEMPLATE_NAMES):
+    if name.lower() in (template_name.lower() for template_name in builtin_template_names()):
         raise ValueError('Choose a new name when saving a shared workout template')
 
     normalized_plan = normalize_preset_plan(plan)
@@ -408,7 +434,7 @@ def save_profile_preset(path, legacy_presets_path, profile_name, name, plan):
     name = name.strip()
     if not name or len(name) > 80:
         raise ValueError('Preset name must contain between 1 and 80 characters')
-    if name.lower() in (template_name.lower() for template_name in BUILTIN_TEMPLATE_NAMES):
+    if name.lower() in (template_name.lower() for template_name in builtin_template_names()):
         raise ValueError('Choose a new name when saving a shared workout template')
     normalized_plan = normalize_preset_plan(plan)
     profiles = read_profiles(path, legacy_presets_path)
@@ -665,7 +691,7 @@ def analyze_astrand(samples, block, profile):
     minute5 = [s for s in samples if start + 240 <= s['elapsed'] < start + 300 and s.get('pulse', 0) >= 20]
     minute6 = [s for s in samples if start + 300 <= s['elapsed'] < start + 360 and s.get('pulse', 0) >= 20]
     if len(minute5) < 45 or len(minute6) < 45:
-        result['problems'].append('Testen blev ikke gennemført: der skal cykles 6 minutter ved fast belastning.')
+        result['problems'].append({'code': 'astrand_incomplete'})
         return result
     pulse5 = _mean([s['pulse'] for s in minute5])
     pulse6 = _mean([s['pulse'] for s in minute6])
@@ -674,21 +700,18 @@ def analyze_astrand(samples, block, profile):
     result.update({'watts': int(round(watts)), 'pulse': int(round(pulse)),
                    'pulse_minute5': int(round(pulse5)), 'pulse_minute6': int(round(pulse6))})
     if abs(pulse6 - pulse5) > ASTRAND_STEADY_BEATS:
-        result['problems'].append('Pulsen var ikke stabil (over %d slags forskel mellem minut 5 og 6).'
-                                  % ASTRAND_STEADY_BEATS)
+        result['problems'].append({'code': 'astrand_unstable', 'limit': ASTRAND_STEADY_BEATS})
     if pulse < ASTRAND_MIN_PULSE:
-        result['problems'].append('Pulsen var under %d: gentag testen med højere belastning.'
-                                  % ASTRAND_MIN_PULSE)
+        result['problems'].append({'code': 'astrand_pulse_low', 'limit': ASTRAND_MIN_PULSE})
     elif pulse > ASTRAND_MAX_PULSE:
-        result['problems'].append('Pulsen var over %d: gentag testen med lavere belastning.'
-                                  % ASTRAND_MAX_PULSE)
+        result['problems'].append({'code': 'astrand_pulse_high', 'limit': ASTRAND_MAX_PULSE})
     if any(s.get('limited') for s in minute5 + minute6):
-        result['problems'].append('Pulsgrænsen sænkede belastningen undervejs.')
+        result['problems'].append({'code': 'pulse_limited'})
     age = _profile_age(profile)
     sex = profile.get('sex') if profile else None
     weight = profile.get('weight_kg') if profile else None
     if not age or not sex or not weight:
-        result['problems'].append('Udfyld fødselsår, køn og vægt på brugerprofilen for at få et kondital.')
+        result['problems'].append({'code': 'astrand_profile_missing'})
         return result
     factor = astrand_age_factor(age)
     litres = astrand_vo2max_litres(watts, pulse, sex) * factor
@@ -704,7 +727,7 @@ def analyze_ramp(samples, block, profile):
     riding = [s for s in samples if block['start'] <= s['elapsed'] < block['end'] and
               s.get('rpm', RAMP_PEDALLING_RPM) >= RAMP_PEDALLING_RPM]
     if not riding or riding[-1]['elapsed'] - block['start'] < RAMP_MIN_SECONDS:
-        result['problems'].append('Rampen varede under 3 minutter, så testen giver ikke et resultat.')
+        result['problems'].append({'code': 'ramp_too_short'})
         return result
     by_second = dict((s['elapsed'], s.get('power', s.get('target_power', 0))) for s in riding)
     best = 0
@@ -724,7 +747,7 @@ def analyze_ramp(samples, block, profile):
         'max_pulse': max(pulses) if pulses else None})
     weight = profile.get('weight_kg') if profile else None
     if not weight:
-        result['problems'].append('Udfyld vægt på brugerprofilen for at få et kondital.')
+        result['problems'].append({'code': 'ramp_weight_missing'})
         return result
     # Common estimate from maximal cycling power: VO2max = 10.8 x W/kg + 7 (ml/kg/min).
     result['vo2max'] = round(10.8 * best / weight + 7, 1)
@@ -981,7 +1004,7 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
             session = {
                 'profile': self.workout_profile,
                 'started': self.workout_started,
-                'name': self.chart_plan.get('name') or 'Ny træning',
+                'name': self.chart_plan.get('name') or '',
                 'mode': self.chart_plan.get('mode', 'pulse'),
                 'planned_seconds': self.chart_plan.get('duration'),
                 'completed': exit_code == 0 and not self.stop_requested,
@@ -1119,6 +1142,15 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             page = page.replace(b'@@DEVICE_TYPES@@',
                                 json.dumps(public_device_types()).encode('utf-8'))
             self._send(200, page, 'text/html; charset=utf-8')
+            return
+
+        if request_path == '/i18n.js':
+            script_path = os.path.join(os.path.dirname(__file__), 'i18n.js')
+            with open(script_path, 'rb') as script_file:
+                script = script_file.read()
+            script = script.replace(b'@@LANGUAGES@@', json.dumps(
+                read_languages(), ensure_ascii=False, sort_keys=True).encode('utf-8'))
+            self._send(200, script, 'text/javascript; charset=utf-8')
             return
 
         if request_path == '/udvikling':
@@ -1341,7 +1373,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 return
             self.server.refresh_process()
             if self.server.starting:
-                self._send_json(409, {'error': STARTING_MESSAGE})
+                self._send_json(409, STARTING_ERROR)
                 return
             if self.server.process is not None:
                 self._send_json(409, {'error': 'A workout is already running'})
@@ -1391,7 +1423,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
 
         self.server.refresh_process()
         if self.server.starting:
-            self._send_json(409, {'error': STARTING_MESSAGE})
+            self._send_json(409, STARTING_ERROR)
             return
         if self.server.process is not None:
             self._send_json(409, {'error': 'A workout is already running'})
@@ -1536,9 +1568,10 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 if os.path.exists(heart_rate_path + '.status'):
                     os.remove(heart_rate_path + '.status')
                 self._send_json(400, {
-                    'error': 'Ingen puls fra uret inden for %d sekunder (%s). Slå urets '
-                             'Bluetooth-pulsdeling til og prøv igen.' % (
-                                 WATCH_START_TIMEOUT, watch_error or 'ingen forbindelse')
+                    'error': 'No pulse from the watch within %d seconds (%s)' % (
+                        WATCH_START_TIMEOUT, watch_error or 'no connection'),
+                    'code': 'watch_no_pulse' if watch_error else 'watch_no_connection',
+                    'params': {'seconds': WATCH_START_TIMEOUT, 'detail': watch_error}
                 })
                 return
             command.extend(['--heart-rate-file', heart_rate_path])

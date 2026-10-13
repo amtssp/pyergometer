@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pyergometer - min udvikling</title>
+  <title data-i18n="development.page.title">Pyergometer</title>
+  <script src="/i18n.js"></script>
   <style>
     :root {
       color-scheme: light;
@@ -142,50 +143,50 @@
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">&#9829;</span>
       <div>
-        <h1>Min udvikling</h1>
-        <small>Kondital, pulsfald og træning over tid</small>
+        <h1 data-i18n="development.title"></h1>
+        <small data-i18n="development.subtitle"></small>
       </div>
     </div>
-    <label for="user-profile">Bruger <select id="user-profile"></select></label>
-    <a id="back-link" class="nav-link" href="/">&larr; Til træning</a>
+    <label for="user-profile"><span data-i18n="top.user"></span> <select id="user-profile"></select></label>
+    <a id="back-link" class="nav-link" href="/" data-i18n="development.back"></a>
   </header>
 
-  <div class="range-row" role="group" aria-label="Periode">
-    <button type="button" data-range="3m">3 måneder</button>
-    <button type="button" data-range="12m">12 måneder</button>
-    <button type="button" data-range="all">Alt</button>
+  <div class="range-row" role="group" data-i18n-attr="aria-label:development.range.aria">
+    <button type="button" data-range="3m" data-i18n="development.range.3m"></button>
+    <button type="button" data-range="12m" data-i18n="development.range.12m"></button>
+    <button type="button" data-range="all" data-i18n="development.range.all"></button>
   </div>
 
-  <p id="message" class="muted" aria-live="polite">Henter data …</p>
+  <p id="message" class="muted" aria-live="polite" data-i18n="development.loading"></p>
 
-  <section class="tiles" id="tiles" aria-label="Nøgletal"></section>
+  <section class="tiles" id="tiles" data-i18n-attr="aria-label:development.tiles.aria"></section>
 
-  <section class="charts" aria-label="Grafer">
+  <section class="charts" data-i18n-attr="aria-label:development.charts.aria">
     <div class="panel">
       <div class="panel-head">
-        <h2>Kondital</h2>
-        <p>ml O₂ pr. kg pr. minut, fra gyldige tests. Højere er bedre.</p>
+        <h2 data-i18n="development.vo2max.title"></h2>
+        <p data-i18n="development.vo2max.note"></p>
       </div>
       <div class="chart-box" id="chart-vo2max"></div>
     </div>
     <div class="panel">
       <div class="panel-head">
-        <h2>Pulsfald efter 60 sekunder</h2>
-        <p id="recovery-note">Slag pr. minut fra "+ Pulsfald"-blokke. Større fald er bedre.</p>
+        <h2 data-i18n="development.recovery.title"></h2>
+        <p id="recovery-note" data-i18n="development.recovery.note"></p>
       </div>
       <div class="chart-box" id="chart-recovery"></div>
     </div>
     <div class="panel">
       <div class="panel-head">
-        <h2>Watt pr. pulsslag</h2>
-        <p id="efficiency-note">I pulsstyrede intervaller, når pulsen har stabiliseret sig. Højere er bedre.</p>
+        <h2 data-i18n="development.efficiency.title"></h2>
+        <p id="efficiency-note" data-i18n="development.efficiency.note"></p>
       </div>
       <div class="chart-box" id="chart-efficiency"></div>
     </div>
     <div class="panel">
       <div class="panel-head">
-        <h2 id="volume-title">Træningstid pr. uge</h2>
-        <p id="volume-note">Minutter pr. uge.</p>
+        <h2 id="volume-title" data-i18n="development.volume.initialTitle"></h2>
+        <p id="volume-note" data-i18n="development.volume.initialNote"></p>
       </div>
       <div class="chart-box" id="chart-weeks"></div>
     </div>
@@ -193,27 +194,28 @@
 
   <section class="panel" id="years-panel" style="margin-top:1rem" hidden>
     <div class="panel-head">
-      <h2>År for år</h2>
-      <p>Kondital fra årets første til seneste gyldige test, for hver testtype; pulsfald og watt pr. pulsslag som gennemsnit.</p>
+      <h2 data-i18n="development.years.title"></h2>
+      <p data-i18n="development.years.note"></p>
     </div>
     <div class="table-wrap"><table id="years-table"></table></div>
   </section>
 
   <section class="panel">
-    <div class="panel-head"><h2 id="tests-title">Konditests</h2></div>
+    <div class="panel-head"><h2 id="tests-title" data-i18n="development.tests.initial"></h2></div>
     <div class="table-wrap"><table id="tests-table"></table></div>
   </section>
 
   <section class="panel">
-    <div class="panel-head"><h2 id="sessions-title">Alle træninger</h2></div>
+    <div class="panel-head"><h2 id="sessions-title" data-i18n="development.sessions.initial"></h2></div>
     <div class="table-wrap"><table id="sessions-table"></table></div>
     <button id="show-all-sessions" class="nav-link" type="button" hidden style="margin-top:.75rem;cursor:pointer"></button>
   </section>
 
   <script>
     (function () {
+      I18N.apply();
       var NS = 'http://www.w3.org/2000/svg';
-      var MONTHS = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+      var MONTHS = t('months.short');
       var profileSelect = document.getElementById('user-profile');
       var message = document.getElementById('message');
 
@@ -233,14 +235,21 @@
         return element;
       }
       function number(value, decimals) {
-        return value.toFixed(decimals || 0).replace('.', ',');
+        return I18N.number(value, decimals || 0);
       }
       function shortDate(date) {
-        return date.getDate() + '. ' + MONTHS[date.getMonth()];
+        return t('date.short', {day: date.getDate(), month: MONTHS[date.getMonth()]});
       }
       function longDate(date) {
-        return shortDate(date) + ' ' + date.getFullYear() + ', ' +
-          String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+        return t('date.long', {date: shortDate(date), year: date.getFullYear(),
+          time: String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0')});
+      }
+      // Singular or plural text: key + '.one' or key + '.other'.
+      function counted(key, count) {
+        return t(key + (count === 1 ? '.one' : '.other'), {count: count});
+      }
+      function unitName(unit) {
+        return t('development.unit.' + unit);
       }
       function minutes(seconds) {
         return Math.round((seconds || 0) / 60);
@@ -278,12 +287,13 @@
             fill: css('--axis-text'), 'font-size': 11}, number(v, options.decimals || 0)));
         }
         var longSpan = last - first > 300 * 86400000;
-        dateTicks(first, last).forEach(function (t) {
-          var tick = new Date(t);
+        dateTicks(first, last).forEach(function (time) {
+          var tick = new Date(time);
           // Over long periods the axis shows month and year instead of day and month.
-          chart.appendChild(svg('text', {x: x(t), y: height - 8, 'text-anchor': 'middle',
+          chart.appendChild(svg('text', {x: x(time), y: height - 8, 'text-anchor': 'middle',
             fill: css('--axis-text'), 'font-size': 11},
-            longSpan ? MONTHS[tick.getMonth()] + ' ' + tick.getFullYear() : shortDate(tick)));
+            longSpan ? t('date.monthYear', {month: MONTHS[tick.getMonth()], year: tick.getFullYear()})
+              : shortDate(tick)));
         });
         series.forEach(function (s) {
           var points = s.points.slice().sort(function (a, b) { return a.date - b.date; });
@@ -392,9 +402,10 @@
       function bucketName(date, unit, long) {
         if (unit === 'year') return String(date.getFullYear());
         if (unit === 'month') {
-          return MONTHS[date.getMonth()] + (long ? ' ' + date.getFullYear() : '');
+          return long ? t('date.monthYear', {month: MONTHS[date.getMonth()], year: date.getFullYear()})
+            : MONTHS[date.getMonth()];
         }
-        return long ? 'uge fra ' + shortDate(date) + ' ' + date.getFullYear() : shortDate(date);
+        return long ? t('date.weekFrom', {date: shortDate(date), year: date.getFullYear()}) : shortDate(date);
       }
       // Average noisy measurements per week or month; tests are never averaged.
       function aggregate(points, unit) {
@@ -408,8 +419,7 @@
           var values = groups[key];
           var start = new Date(Number(key));
           return {date: start, value: values.reduce(function (a, b) { return a + b; }, 0) / values.length,
-            note: 'Gennemsnit af ' + values.length + (values.length === 1 ? ' måling' : ' målinger') +
-              ' · ' + bucketName(start, unit, true)};
+            note: counted('development.averageOf', values.length) + ' · ' + bucketName(start, unit, true)};
         });
       }
 
@@ -427,7 +437,7 @@
           });
         });
         if (!buckets.some(function (bucket) { return bucket.minutes > 0; })) {
-          box.appendChild(el('div', 'chart-empty', 'Ingen træninger i perioden.'));
+          box.appendChild(el('div', 'chart-empty', t('development.volume.empty')));
           return;
         }
         var hours = unit !== 'week';
@@ -440,7 +450,7 @@
         var barWidth = Math.min(24, band * 0.6);
         var y = function (v) { return top + (high - v) / high * (height - top - bottom); };
         var chart = svg('svg', {viewBox: '0 0 ' + width + ' ' + height, role: 'img',
-          'aria-label': 'Træningstid pr. ' + (unit === 'week' ? 'uge' : unit === 'month' ? 'måned' : 'år')});
+          'aria-label': t('development.volume.title', {unit: unitName(unit)})});
         for (var v = 0; v <= high + step / 2; v += step) {
           chart.appendChild(svg('line', {x1: left, x2: width - right, y1: y(v), y2: y(v),
             stroke: v === 0 ? css('--axis') : css('--grid'), 'stroke-width': 1}));
@@ -472,10 +482,10 @@
             fill: 'transparent', tabindex: 0});
           var showBucket = function () {
             tooltip.textContent = '';
-            tooltip.appendChild(el('strong', '', hours ? number(bucket.minutes / 60, 1) + ' timer'
-              : bucket.minutes + ' min'));
-            tooltip.appendChild(el('div', '', bucketName(bucket.start, unit, true) + ' · ' + bucket.count +
-              (bucket.count === 1 ? ' træning' : ' træninger')));
+            tooltip.appendChild(el('strong', '', hours ? t('development.hours', {value: number(bucket.minutes / 60, 1)})
+              : t('development.minutes', {value: bucket.minutes})));
+            tooltip.appendChild(el('div', '', bucketName(bucket.start, unit, true) + ' · ' +
+              counted('development.workouts', bucket.count)));
             tooltip.hidden = false;
             var bounds = chart.getBoundingClientRect(), scale = width / bounds.width;
             tooltip.style.left = Math.max(0, Math.min(cx / scale + 10, bounds.width - tooltip.offsetWidth)) + 'px';
@@ -522,7 +532,7 @@
         target.appendChild(head);
         var body = el('tbody');
         if (!rows.length) {
-          var empty = el('tr'), cell = el('td', 'muted', 'Ingen endnu.');
+          var empty = el('tr'), cell = el('td', 'muted', t('development.table.empty'));
           cell.colSpan = headers.length;
           empty.appendChild(cell);
           body.appendChild(empty);
@@ -541,9 +551,9 @@
 
       // ------------------------------------------------------------ render
       var RANGES = {
-        '3m': {days: 91, name: '3 måneder'},
-        '12m': {days: 365, name: '12 måneder'},
-        'all': {days: null, name: 'alt'}
+        '3m': {days: 91},
+        '12m': {days: 365},
+        'all': {days: null}
       };
       var allSessions = [];
       var range = '3m';
@@ -580,15 +590,19 @@
         sessions.forEach(function (s) {
           (s.recoveries || []).forEach(function (r) {
             if (r.seconds >= 60) list.push({date: s.date, value: r.drop,
-              note: r.start_pulse + ' → ' + r.end_pulse + ' bpm · ' + s.name});
+              note: r.start_pulse + ' → ' + r.end_pulse + ' bpm · ' + sessionName(s)});
           });
         });
         return list;
       }
       function efficiencyOf(sessions) {
         return sessions.filter(function (s) { return s.watt_per_beat; }).map(function (s) {
-          return {date: s.date, value: s.watt_per_beat, note: s.name};
+          return {date: s.date, value: s.watt_per_beat, note: sessionName(s)};
         });
+      }
+      // Workouts saved without a name were new, unsaved plans.
+      function sessionName(session) {
+        return session.name || t('workout.new');
       }
       function mean(list) {
         return list.length ? list.reduce(function (a, p) { return a + p.value; }, 0) / list.length : null;
@@ -607,12 +621,12 @@
         // monthly means over longer periods. Training time: weeks, months or years.
         var averageUnit = range === '3m' ? null : (range === '12m' || span <= 400 ? 'week' : 'month');
         var volumeUnit = range === '3m' ? 'week' : (span <= 3 * 365 ? 'month' : 'year');
-        var periodText = config.days ? 'de seneste ' + config.name : 'hele perioden';
+        var periodText = t('development.period.' + range);
 
         message.className = 'muted';
         message.textContent = !allSessions.length
-          ? 'Ingen træninger endnu for ' + profileSelect.value + '. Kør en træning eller en konditest, så dukker de op her.'
-          : !sessions.length ? 'Ingen træninger ' + periodText + '. Vælg en længere periode.' : '';
+          ? t('development.noHistory', {profile: profileSelect.value})
+          : !sessions.length ? t('development.noSessions', {period: periodText}) : '';
 
         var tests = testsOf(sessions);
         var valid = function (type) {
@@ -625,19 +639,19 @@
         // Tiles: the latest value and the change since the start of the period.
         var tiles = document.getElementById('tiles');
         tiles.textContent = '';
-        var since = 'i perioden';
+        var since = t('development.since');
         var fitness = astrand.concat(ramp).sort(function (a, b) { return a.date - b.date; });
         var latest = fitness[fitness.length - 1];
         var firstSame = latest && fitness.filter(function (t) { return t.test.type === latest.test.type; })[0];
-        tiles.appendChild(tile('Kondital', latest ? latest.test.vo2max : null, 'ml/kg/min',
+        tiles.appendChild(tile(t('development.vo2max.title'), latest ? latest.test.vo2max : null, 'ml/kg/min',
           latest ? (firstSame !== latest ? {change: latest.test.vo2max - firstSame.test.vo2max, since: since}
-                                         : {text: latest.test.type === 'astrand' ? 'Åstrand-test' : 'Rampetest'}) : null,
+                                         : {text: t(latest.test.type === 'astrand' ? 'test.astrand' : 'test.ramp')}) : null,
           true, 1));
         var ramps = tests.filter(function (t) { return t.test.type === 'ramp' && t.test.ftp_watts; });
         var latestRamp = ramps[ramps.length - 1];
         tiles.appendChild(tile('FTP', latestRamp ? latestRamp.test.ftp_watts : null, 'W',
           latestRamp ? (ramps.length > 1 ? {change: latestRamp.test.ftp_watts - ramps[0].test.ftp_watts, since: since}
-                                         : {text: 'Rampetest ' + shortDate(latestRamp.date)}) : null, true));
+                                         : {text: t('test.ramp') + ' ' + shortDate(latestRamp.date)}) : null, true));
         // Noisy figures compare the mean of the last three with the first three in the period.
         var trend = function (list) {
           if (list.length < 2) return null;
@@ -645,50 +659,53 @@
           return {change: mean(list.slice(-size)) - mean(list.slice(0, size)), since: since};
         };
         var lastRecovery = recoveries[recoveries.length - 1];
-        tiles.appendChild(tile('Pulsfald (60 s)', lastRecovery ? lastRecovery.value : null, 'slag',
+        tiles.appendChild(tile(t('development.tile.recovery'), lastRecovery ? lastRecovery.value : null,
+          t('development.unit.beats'),
           trend(recoveries), true));
         var lastEfficiency = efficiency[efficiency.length - 1];
-        tiles.appendChild(tile('Watt pr. pulsslag', lastEfficiency ? lastEfficiency.value : null, '',
+        tiles.appendChild(tile(t('development.efficiency.title'), lastEfficiency ? lastEfficiency.value : null, '',
           trend(efficiency), true, 2));
         var totalMinutes = sessions.reduce(function (a, s) { return a + minutes(s.seconds); }, 0);
-        tiles.appendChild(tile('Træning, ' + (config.days ? config.name : 'i alt'),
-          totalMinutes >= 120 ? totalMinutes / 60 : totalMinutes, totalMinutes >= 120 ? 'timer' : 'min',
-          {text: sessions.length + (sessions.length === 1 ? ' træning' : ' træninger')}, true,
+        tiles.appendChild(tile(t('development.tile.training.' + range),
+          totalMinutes >= 120 ? totalMinutes / 60 : totalMinutes,
+          totalMinutes >= 120 ? t('development.unit.hours') : 'min',
+          {text: counted('development.workouts', sessions.length)}, true,
           totalMinutes >= 120 ? 1 : 0));
 
         // Charts
         var points = function (list) {
           return list.map(function (t) {
             return {date: t.date, value: t.test.vo2max,
-              note: t.test.type === 'astrand' ? 'Puls ' + t.test.pulse + ' ved ' + t.test.watts + ' W'
-                : 'Bedste minut ' + t.test.map_watts + ' W'};
+              note: t.test.type === 'astrand'
+                ? I18N.t('development.note.astrand', {pulse: t.test.pulse, watts: t.test.watts})
+                : I18N.t('development.note.ramp', {watts: t.test.map_watts})};
           });
         };
         var vo2Series = [];
-        if (astrand.length) vo2Series.push({name: 'Åstrand-test', color: css('--series-1'), points: points(astrand)});
-        if (ramp.length) vo2Series.push({name: 'Rampetest', color: css(astrand.length ? '--series-2' : '--series-1'), points: points(ramp)});
+        if (astrand.length) vo2Series.push({name: t('test.astrand'), color: css('--series-1'), points: points(astrand)});
+        if (ramp.length) vo2Series.push({name: t('test.ramp'), color: css(astrand.length ? '--series-2' : '--series-1'), points: points(ramp)});
         lineChart(document.getElementById('chart-vo2max'), vo2Series, {
-          unit: 'ml/kg/min', decimals: 1, minPad: 2, label: 'Kondital over tid',
-          empty: 'Ingen gyldige konditests ' + periodText + '. Kør "Test · Åstrand" eller "Test · Maksimal rampe".'});
-        var averaged = averageUnit ? ' Vist som gennemsnit pr. ' + (averageUnit === 'week' ? 'uge.' : 'måned.') : '';
-        document.getElementById('recovery-note').textContent =
-          'Slag pr. minut fra "+ Pulsfald"-blokke. Større fald er bedre.' + averaged;
-        document.getElementById('efficiency-note').textContent =
-          'I pulsstyrede intervaller, når pulsen har stabiliseret sig. Højere er bedre.' + averaged;
+          unit: 'ml/kg/min', decimals: 1, minPad: 2, label: t('development.vo2max.label'),
+          empty: t('development.vo2max.empty', {period: periodText})});
+        var averaged = averageUnit ? ' ' + t('development.averaged', {unit: unitName(averageUnit)}) : '';
+        document.getElementById('recovery-note').textContent = t('development.recovery.note') + averaged;
+        document.getElementById('efficiency-note').textContent = t('development.efficiency.note') + averaged;
         var recoveryPoints = aggregate(recoveries, averageUnit);
         lineChart(document.getElementById('chart-recovery'),
-          recoveryPoints.length ? [{name: 'Pulsfald', color: css('--series-1'), points: recoveryPoints}] : [], {
-          unit: 'slag', decimals: averageUnit ? 1 : 0, minPad: 3, label: 'Pulsfald efter 60 sekunder over tid',
-          empty: 'Ingen pulsfald-målinger ' + periodText + '. Tilføj en "+ Pulsfald"-blok efter en hård blok.'});
+          recoveryPoints.length ? [{name: t('chart.recovery'), color: css('--series-1'), points: recoveryPoints}] : [], {
+          unit: t('development.unit.beats'), decimals: averageUnit ? 1 : 0, minPad: 3,
+          label: t('development.recovery.label'),
+          empty: t('development.recovery.empty', {period: periodText})});
         var efficiencyPoints = aggregate(efficiency, averageUnit);
         lineChart(document.getElementById('chart-efficiency'),
-          efficiencyPoints.length ? [{name: 'Watt pr. pulsslag', color: css('--series-1'), points: efficiencyPoints}] : [], {
-          unit: 'W/slag', decimals: 2, minPad: 0.05, label: 'Watt pr. pulsslag over tid',
-          empty: 'Ingen målinger ' + periodText + '. De kommer fra pulsstyrede intervaller på mindst 3 minutter.'});
-        var volumeName = volumeUnit === 'week' ? 'uge' : volumeUnit === 'month' ? 'måned' : 'år';
-        document.getElementById('volume-title').textContent = 'Træningstid pr. ' + volumeName;
-        document.getElementById('volume-note').textContent =
-          (volumeUnit === 'week' ? 'Minutter' : 'Timer') + ' pr. ' + volumeName + ', ' + periodText + '.';
+          efficiencyPoints.length ? [{name: t('development.efficiency.title'), color: css('--series-1'), points: efficiencyPoints}] : [], {
+          unit: t('development.unit.wattPerBeat'), decimals: 2, minPad: 0.05, label: t('development.efficiency.label'),
+          empty: t('development.efficiency.empty', {period: periodText})});
+        document.getElementById('volume-title').textContent =
+          t('development.volume.title', {unit: unitName(volumeUnit)});
+        document.getElementById('volume-note').textContent = t(volumeUnit === 'week'
+          ? 'development.volume.noteMinutes' : 'development.volume.noteHours',
+          {unit: unitName(volumeUnit), period: periodText});
         volumeChart(document.getElementById('chart-weeks'), sessions, from, volumeUnit);
 
         // Year by year, for the whole history
@@ -698,9 +715,11 @@
           var years = {};
           allSessions.forEach(function (s) { (years[s.date.getFullYear()] = years[s.date.getFullYear()] || []).push(s); });
           table(document.getElementById('years-table'),
-            [{text: 'År'}, {text: 'Træninger', num: true}, {text: 'Tid', num: true},
-             {text: 'Kondital, Åstrand'}, {text: 'Kondital, rampe'},
-             {text: 'Gns. pulsfald', num: true}, {text: 'Gns. W/slag', num: true}],
+            [{text: t('development.column.year')}, {text: t('development.column.workouts'), num: true},
+             {text: t('development.column.time'), num: true},
+             {text: t('development.column.vo2maxAstrand')}, {text: t('development.column.vo2maxRamp')},
+             {text: t('development.column.avgRecovery'), num: true},
+             {text: t('development.column.avgWattPerBeat'), num: true}],
             Object.keys(years).sort().reverse().map(function (year) {
               var list = years[year];
               // The two tests give different levels, so each is followed on its own.
@@ -715,44 +734,53 @@
               };
               var drop = mean(recoveriesOf(list)), perBeat = mean(efficiencyOf(list));
               var yearMinutes = list.reduce(function (a, s) { return a + minutes(s.seconds); }, 0);
-              return [year, list.length, number(yearMinutes / 60, 1) + ' timer',
+              return [year, list.length, t('development.hours', {value: number(yearMinutes / 60, 1)}),
                 fitnessText('astrand'), fitnessText('ramp'),
                 drop !== null ? number(drop, 1) : '–', perBeat !== null ? number(perBeat, 2) : '–'];
             }));
         }
 
         // Tables for the period (newest first)
-        document.getElementById('tests-title').textContent = 'Konditests, ' + periodText;
+        document.getElementById('tests-title').textContent = t('development.tests.title', {period: periodText});
         table(document.getElementById('tests-table'),
-          [{text: 'Dato'}, {text: 'Test'}, {text: 'Resultat'}, {text: 'Kondital', num: true}, {text: 'Status'}],
+          [{text: t('development.column.date')}, {text: t('development.column.test')},
+           {text: t('development.column.result')}, {text: t('development.vo2max.title'), num: true},
+           {text: t('development.column.status')}],
           tests.slice().reverse().map(function (t) {
             var test = t.test, result;
             if (test.type === 'astrand') {
-              result = test.pulse ? 'Puls ' + test.pulse + ' (' + test.pulse_minute5 + '/' + test.pulse_minute6 +
-                ') ved ' + test.watts + ' W' : '–';
+              result = test.pulse ? I18N.t('development.result.astrand', {pulse: test.pulse,
+                minute5: test.pulse_minute5, minute6: test.pulse_minute6, watts: test.watts}) : '–';
             } else {
-              result = test.map_watts ? 'Bedste minut ' + test.map_watts + ' W · FTP ' + test.ftp_watts +
-                ' W · max-puls ' + (test.max_pulse || '–') : '–';
+              result = test.map_watts ? I18N.t('development.result.ramp', {map: test.map_watts,
+                ftp: test.ftp_watts, maxPulse: test.max_pulse || '–'}) : '–';
             }
             var state = el('div');
-            state.appendChild(el('span', 'badge ' + (test.valid ? 'ok' : 'no'), test.valid ? 'Gyldig' : 'Ikke gyldig'));
-            if (test.problems && test.problems.length) state.appendChild(el('div', 'problems', test.problems.join(' ')));
-            return [longDate(t.date), test.type === 'astrand' ? 'Åstrand' : 'Maksimal rampe', result,
+            state.appendChild(el('span', 'badge ' + (test.valid ? 'ok' : 'no'),
+              I18N.t(test.valid ? 'development.valid' : 'development.invalid')));
+            if (test.problems && test.problems.length) {
+              state.appendChild(el('div', 'problems', test.problems.map(I18N.problem).join(' ')));
+            }
+            return [longDate(t.date), I18N.t(test.type === 'astrand' ? 'development.test.astrand'
+              : 'development.test.ramp'), result,
               test.vo2max ? number(test.vo2max, 1) : '–', state];
           }));
-        document.getElementById('sessions-title').textContent = 'Træninger, ' + periodText;
+        document.getElementById('sessions-title').textContent = t('development.sessions.title', {period: periodText});
         var shownSessions = sessions.slice().reverse();
         var showAll = document.getElementById('show-all-sessions');
         showAll.hidden = shownSessions.length <= SESSION_ROWS || showAllSessions;
-        showAll.textContent = 'Vis alle ' + shownSessions.length + ' træninger';
+        showAll.textContent = t('development.showAll', {count: shownSessions.length});
         if (!showAllSessions) shownSessions = shownSessions.slice(0, SESSION_ROWS);
         table(document.getElementById('sessions-table'),
-          [{text: 'Dato'}, {text: 'Træning'}, {text: 'Tid', num: true}, {text: 'Gns. puls', num: true},
-           {text: 'Max puls', num: true}, {text: 'Gns. watt', num: true}, {text: 'kJ', num: true},
-           {text: 'Pulsfald', num: true}, {text: 'W/slag', num: true}],
+          [{text: t('development.column.date')}, {text: t('development.column.workout')},
+           {text: t('development.column.time'), num: true}, {text: t('development.column.avgPulse'), num: true},
+           {text: t('development.column.maxPulse'), num: true}, {text: t('development.column.avgWatts'), num: true},
+           {text: 'kJ', num: true}, {text: t('chart.recovery'), num: true},
+           {text: t('development.unit.wattPerBeat'), num: true}],
           shownSessions.map(function (s) {
             var drops = (s.recoveries || []).map(function (r) { return r.drop; }).join(', ');
-            return [longDate(s.date), s.name + (s.completed ? '' : ' (stoppet)'), minutes(s.seconds) + ' min',
+            return [longDate(s.date), s.completed ? sessionName(s)
+              : t('development.stopped', {name: sessionName(s)}), minutes(s.seconds) + ' min',
               s.avg_pulse || '–', s.max_pulse || '–', s.avg_power || '–',
               s.energy_kj !== undefined ? number(s.energy_kj, 0) : '–', drops || '–',
               s.watt_per_beat ? number(s.watt_per_beat, 2) : '–'];
@@ -761,13 +789,13 @@
 
       function load(name) {
         message.className = 'muted';
-        message.textContent = 'Henter data …';
+        message.textContent = t('development.loading');
         try { window.localStorage.setItem('pyergometer-profile', name); } catch (error) { /* optional */ }
         document.getElementById('back-link').href = '/';
         history.replaceState(null, '', '/udvikling?profile=' + encodeURIComponent(name));
         fetch('/api/history?profile=' + encodeURIComponent(name)).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke hente historikken');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.history'));
             return data.sessions;
           });
         }).then(function (sessions) {
@@ -796,7 +824,7 @@
         load(profileSelect.value);
       }).catch(function () {
         message.className = 'error';
-        message.textContent = 'Kunne ikke hente brugerprofilerne.';
+        message.textContent = t('error.profilesPage');
       });
       profileSelect.addEventListener('change', function () { load(profileSelect.value); });
     }());

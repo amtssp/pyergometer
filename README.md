@@ -192,14 +192,22 @@ progress between the fitness tests without any extra effort: add a
 "+ Pulsfald" block at the end of a workout and ride pulse-controlled intervals.
 
 Supported bikes are listed in ``devices.py``: currently a Kettler on a serial
-RS-232 port and a simulation. Choose the bike type on the page under the bike
-settings, or pass ``--device-type`` on the command line (``--simulate`` is short
+RS-232 port and a simulation. Choose the bike type on the page under
+Settings, or pass ``--device-type`` on the command line (``--simulate`` is short
 for ``--device-type simulator``). The bike type and serial port chosen on the
 page are saved in the Git-ignored ``bike_settings.json`` and used every time
 the server starts; command-line options override them. To add another bike, write a driver class with
 the ``ErgometerDevice`` interface (``status()``, ``set_power()`` and the
 ``pulse``, ``rpm`` and ``power`` values) and add it to ``DEVICE_TYPES``; the
 pulse control, chart and logs then work unchanged.
+
+The page is available in Danish and English. Choose the language under
+Settings; the choice is remembered per browser, and a first visit follows the
+browser's own language. All page texts are in ``lang/<code>.json``. To add a
+language, copy ``lang/en.json`` to a file named after the language code (for
+example ``lang/de.json``), translate the texts and set ``language.name``; it
+then appears in the language picker. A test checks that every language has
+the same texts and placeholders as Danish.
 
 To use an existing XML session directly, pass it as before:
 

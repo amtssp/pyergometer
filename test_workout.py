@@ -6,6 +6,7 @@ import shutil
 import datetime
 import http.client
 import json
+import re
 import subprocess
 import sys
 import threading
@@ -32,7 +33,9 @@ from workout import (
     update_profile_watch,
     update_profile_max_pulse,
     read_bike_settings,
-    write_bike_settings
+    write_bike_settings,
+    builtin_template_names,
+    read_languages
 )
 from liveplan import session_steps
 from bleheartrate import (
@@ -712,7 +715,8 @@ class DeviceDriverTests(unittest.TestCase):
             server.server_close()
 
         self.assertEqual(response.status, 200)
-        self.assertIn('Min udvikling', page)
+        self.assertIn('data-i18n="development.title"', page)
+        self.assertIn('<script src="/i18n.js"></script>', page)
 
     def test_page_offers_the_device_types(self):
         server = WorkoutServer(('127.0.0.1', 0), simulate=True)
@@ -857,13 +861,14 @@ class StartingStateTests(unittest.TestCase):
             headers={'Content-Type': 'application/json',
                      'Origin': 'http://127.0.0.1:%d' % server.server_port})
         response = connection.getresponse()
-        error = json.loads(response.read().decode('utf-8'))['error']
+        body = json.loads(response.read().decode('utf-8'))
         connection.close()
 
         self.assertTrue(status['starting'])
         self.assertFalse(status['running'])
         self.assertEqual(response.status, 409)
-        self.assertIn('venter på pulsen fra uret', error)
+        self.assertEqual(body['code'], 'starting')
+        self.assertIn('error', body)
 
 
 class WatchStartTests(unittest.TestCase):
@@ -937,7 +942,8 @@ class WatchStartTests(unittest.TestCase):
 
         self.assertEqual(status, 400)
         self.assertEqual(waits, [30])
-        self.assertIn('Ingen puls fra uret', body['error'])
+        self.assertIn(body['code'], ('watch_no_pulse', 'watch_no_connection'))
+        self.assertEqual(body['params']['seconds'], 30)
 
 
 class DemoLiveUpdateTests(unittest.TestCase):
@@ -1414,12 +1420,12 @@ class FitnessTestTests(unittest.TestCase):
         short = analyze_astrand(self.astrand_samples(148, 150)[0][:400], {'start': 180, 'end': 540},
                                 self.profile)
 
-        self.assertIn('ikke stabil', unstable['problems'][0])
-        self.assertIn('under 120', too_low['problems'][0])
-        self.assertIn('Pulsgrænsen', limited['problems'][0])
-        self.assertIn('fødselsår, køn og vægt', no_profile['problems'][0])
+        self.assertEqual(unstable['problems'][0], {'code': 'astrand_unstable', 'limit': 5})
+        self.assertEqual(too_low['problems'][0], {'code': 'astrand_pulse_low', 'limit': 120})
+        self.assertEqual(limited['problems'][0], {'code': 'pulse_limited'})
+        self.assertEqual(no_profile['problems'][0], {'code': 'astrand_profile_missing'})
         self.assertNotIn('vo2max', no_profile)
-        self.assertIn('ikke gennemført', short['problems'][0])
+        self.assertEqual(short['problems'][0], {'code': 'astrand_incomplete'})
         for result in (unstable, too_low, limited, no_profile, short):
             self.assertFalse(result['valid'])
 
@@ -1447,7 +1453,7 @@ class FitnessTestTests(unittest.TestCase):
         result = analyze_ramp(samples, {'start': 300, 'end': 2100, 'index': 1}, self.profile)
 
         self.assertFalse(result['valid'])
-        self.assertIn('under 3 minutter', result['problems'][0])
+        self.assertEqual(result['problems'][0], {'code': 'ramp_too_short'})
 
     def test_test_marker_only_on_watt_steps_and_ramps(self):
         chart = build_chart_plan({'mode': 'power', 'blocks': [
@@ -1459,6 +1465,71 @@ class FitnessTestTests(unittest.TestCase):
                                                     'test': 'astrand'}]}):
             with self.assertRaises(ValueError):
                 build_chart_plan(plan)
+
+
+class LanguageTests(unittest.TestCase):
+    PLACEHOLDER = re.compile(r'\{(\w+)\}')
+
+    def test_danish_is_there_and_names_itself(self):
+        languages = read_languages()
+
+        self.assertEqual(languages['da']['language.name'], 'Dansk')
+
+    def test_every_language_has_the_same_texts_and_placeholders_as_danish(self):
+        languages = read_languages()
+        danish = languages['da']
+        for code, texts in languages.items():
+            self.assertEqual(set(texts), set(danish), code)
+            for key, text in texts.items():
+                if isinstance(text, list):
+                    self.assertEqual(len(text), len(danish[key]), (code, key))
+                else:
+                    self.assertEqual(set(self.PLACEHOLDER.findall(text)),
+                                     set(self.PLACEHOLDER.findall(danish[key])), (code, key))
+
+    def test_every_message_code_from_the_server_has_a_text(self):
+        source = open(os.path.join(os.path.dirname(__file__), 'workout.py'), encoding='utf-8').read()
+        danish = read_languages()['da']
+        problems = re.findall(r"problems'\]\.append\(\{'code': '(\w+)'", source)
+        codes = re.findall(r"'code': '(\w+)'", source) + re.findall(r"'code': '(\w+)' if", source)
+        codes += re.findall(r"else '(\w+)',", source)
+
+        self.assertGreaterEqual(len(problems), 8)
+        for code in problems:
+            self.assertIn('problem.' + code, danish)
+        for code in set(codes) - set(problems):
+            self.assertIn('server.' + code, danish)
+
+    def test_shared_template_names_cannot_be_used_for_saved_workouts(self):
+        self.assertIn('Test · Åstrand (submaksimal)', builtin_template_names())
+        directory = tempfile.mkdtemp()
+        try:
+            with self.assertRaises(ValueError):
+                save_preset(os.path.join(directory, 'presets.json'), 'test · åstrand (submaksimal)',
+                            {'blocks': [{'type': 'interval', 'minutes': 1, 'percent': 70}]})
+        finally:
+            shutil.rmtree(directory)
+
+    def test_language_script_carries_the_texts(self):
+        server = WorkoutServer(('127.0.0.1', 0), simulate=True)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+        try:
+            connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+            connection.request('GET', '/i18n.js')
+            response = connection.getresponse()
+            script = response.read().decode('utf-8')
+            connection.close()
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertIn('javascript', response.getheader('Content-Type'))
+        self.assertNotIn('@@LANGUAGES@@', script)
+        self.assertIn('"development.title": "Min udvikling"', script)
 
 
 class Python3ControllerTests(unittest.TestCase):

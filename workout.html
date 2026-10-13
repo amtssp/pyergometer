@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pyergometer - træningsplan</title>
+  <title data-i18n="page.title">Pyergometer</title>
+  <script src="/i18n.js"></script>
   <style>
     :root {
       color-scheme: light;
@@ -162,6 +163,7 @@
       text-transform: uppercase;
     }
     .subsection { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
+    .subsection-title { margin-bottom: .75rem; }
 
     /* Form controls */
     .settings, .fields, .actions {
@@ -432,14 +434,14 @@
         <span class="brand-mark" aria-hidden="true">&#9829;</span>
         <div>
           <h1>Pyergometer</h1>
-          <small>Pulsstyret træning</small>
+          <small data-i18n="brand.subtitle"></small>
         </div>
       </div>
-      <label class="profile-pick" for="user-profile">Bruger
+      <label class="profile-pick" for="user-profile"><span data-i18n="top.user"></span>
         <select id="user-profile"></select>
       </label>
-      <a id="development-link" class="nav-link" href="/udvikling">Min udvikling</a>
-      <button id="start" class="primary" type="button">Start træning</button>
+      <a id="development-link" class="nav-link" href="/udvikling" data-i18n="top.development"></a>
+      <button id="start" class="primary" type="button" data-i18n="start.start"></button>
     </div>
     <div id="status" role="status" aria-live="polite"></div>
   </header>
@@ -447,132 +449,131 @@
   <section class="panel" aria-labelledby="chart-title">
     <div class="panel-head chart-head">
       <div>
-        <h2 id="chart-title">Puls gennem træningen</h2>
+        <h2 id="chart-title" data-i18n="chart.title.pulse"></h2>
         <div class="workout-name">
-          <span id="workout-name">Ingen træning valgt</span>
+          <span id="workout-name" data-i18n="workout.none"></span>
           <span id="workout-name-state" class="muted"></span>
         </div>
-        <div id="summary" class="muted" aria-live="polite">Tilføj et interval eller en pause.</div>
+        <div id="summary" class="muted" aria-live="polite" data-i18n="summary.empty"></div>
       </div>
       <div>
-        <div id="pulse-badge" class="pulse-badge idle" role="img" aria-label="Aktuel puls: ingen måling">
+        <div id="pulse-badge" class="pulse-badge idle" role="img" data-i18n-attr="aria-label:pulse.aria.none">
           <svg viewBox="0 0 100 92" aria-hidden="true">
             <path d="M50 90 C22 70 2 52 2 29 C2 13 14 2 29 2 C39 2 46 8 50 16 C54 8 61 2 71 2 C86 2 98 13 98 29 C98 52 78 70 50 90 Z"/>
           </svg>
           <div class="pulse-value" aria-hidden="true"><span id="pulse-now">--</span><small>bpm</small></div>
         </div>
-        <div id="pulse-target" class="muted">Ingen måling</div>
+        <div id="pulse-target" class="muted" data-i18n="pulse.none"></div>
       </div>
     </div>
     <label id="pulse-limit-row" class="limit-toggle" hidden>
       <input id="pulse-limit" type="checkbox" checked>
-      <span id="pulse-limit-text">Pulsgrænse</span>
+      <span id="pulse-limit-text" data-i18n="limit.label"></span>
     </label>
     <div id="test-guide" class="test-guide" hidden aria-live="polite"></div>
-    <div id="chart-message" class="muted" aria-live="polite">Grafen følger træningsplanen og opdateres én gang i sekundet.</div>
+    <div id="chart-message" class="muted" aria-live="polite" data-i18n="chart.message.initial"></div>
     <div class="chart-row">
-      <svg id="pulse-chart" viewBox="0 0 900 400" role="img"
-           aria-label="Graf over ønsket og målt puls under træningen. Træk i blå mållinjer for at ændre puls og i orange diamanter for at ændre varighed."></svg>
+      <svg id="pulse-chart" viewBox="0 0 900 400" role="img" data-i18n-attr="aria-label:chart.aria"></svg>
       <div class="adjust-buttons">
-        <button id="target-up" type="button" disabled aria-label="Øg pulsmål eller belastning"
-                title="Øg pulsmål eller belastning (virker under træning)">+</button>
-        <button id="target-down" type="button" disabled aria-label="Sænk pulsmål eller belastning"
-                title="Sænk pulsmål eller belastning (virker under træning)">&minus;</button>
+        <button id="target-up" type="button" disabled
+                data-i18n-attr="aria-label:adjust.up.aria;title:adjust.up.title">+</button>
+        <button id="target-down" type="button" disabled
+                data-i18n-attr="aria-label:adjust.down.aria;title:adjust.down.title">&minus;</button>
       </div>
     </div>
-    <p id="chart-help" class="muted">Træk i en blå mållinje for at ændre pulsen, eller i en orange diamant for at ændre varigheden. Under træning slår ændringer igennem ved næste regulering.</p>
+    <p id="chart-help" class="muted" data-i18n="chart.help.initial"></p>
     <div class="chart-foot">
-      <div class="chart-legend" aria-label="Signaturforklaring">
-        <span class="legend-item" id="legend-pulse"><span class="legend-swatch legend-target"></span>Ønsket puls</span>
-        <span class="legend-item" id="legend-pause"><span class="legend-swatch legend-break"></span>Pause, lav watt</span>
-        <span class="legend-item" id="legend-watt" hidden><span class="legend-swatch legend-watt"></span>Belastning (W)</span>
-        <span class="legend-item"><span class="legend-swatch legend-measured"></span>Målt puls</span>
-        <span class="legend-item"><span class="legend-swatch legend-progress"></span>Forløb</span>
+      <div class="chart-legend" data-i18n-attr="aria-label:legend.aria">
+        <span class="legend-item" id="legend-pulse"><span class="legend-swatch legend-target"></span><span data-i18n="legend.pulse"></span></span>
+        <span class="legend-item" id="legend-pause"><span class="legend-swatch legend-break"></span><span data-i18n="legend.pause"></span></span>
+        <span class="legend-item" id="legend-watt" hidden><span class="legend-swatch legend-watt"></span><span data-i18n="legend.watt"></span></span>
+        <span class="legend-item"><span class="legend-swatch legend-measured"></span><span data-i18n="legend.measured"></span></span>
+        <span class="legend-item"><span class="legend-swatch legend-progress"></span><span data-i18n="legend.progress"></span></span>
       </div>
-      <button id="start-demo" class="ghost" type="button">&#9654; Livedemo</button>
+      <button id="start-demo" class="ghost" type="button" data-i18n="demo.button"></button>
     </div>
   </section>
 
   <section class="panel" aria-labelledby="choose-title">
-    <div class="panel-head"><h2 id="choose-title">Vælg træning</h2></div>
+    <div class="panel-head"><h2 id="choose-title" data-i18n="choose.title"></h2></div>
     <div>
       <div class="actions">
-        <label for="saved-presets">Mine gemte træninger
+        <label for="saved-presets"><span data-i18n="choose.saved"></span>
           <select id="saved-presets">
-            <option value="">Vælg opsætning</option>
+            <option value="" data-i18n="choose.saved.placeholder"></option>
           </select>
         </label>
-        <label for="builtin-template">Fælles skabeloner
+        <label for="builtin-template"><span data-i18n="choose.templates"></span>
           <select id="builtin-template">
-            <option value="">Vælg fælles træningspas</option>
-            <option value="hiit-30-30">Puls · HIIT 30/30 (13 gentagelser)</option>
-            <option value="vo2max-5x5">Watt · VO₂ Max 5 × 5</option>
-            <option value="astrand">Test · Åstrand (submaksimal)</option>
-            <option value="ramp-test">Test · Maksimal rampe</option>
+            <option value="" data-i18n="choose.templates.placeholder"></option>
+            <option value="hiit-30-30" data-i18n="template.name.hiit-30-30"></option>
+            <option value="vo2max-5x5" data-i18n="template.name.vo2max-5x5"></option>
+            <option value="astrand" data-i18n="template.name.astrand"></option>
+            <option value="ramp-test" data-i18n="template.name.ramp-test"></option>
           </select>
         </label>
       </div>
       <p id="load-note" class="load-note" hidden>
         <span id="load-note-text"></span>
-        <button id="undo-load" class="link-button" type="button">Fortryd</button>
+        <button id="undo-load" class="link-button" type="button" data-i18n="load.undo"></button>
       </p>
-      <p class="muted">Træningen indlæses, så snart du vælger den. Fælles skabeloner overskrives ikke. Tilpas passet og gem det under et nyt navn under &raquo;Juster og gem den aktuelle træningsplan&laquo;.</p>
+      <p class="muted" data-i18n="choose.help"></p>
     </div>
   </section>
 
-  <div class="section-label">Opsætning</div>
+  <div class="section-label" data-i18n="section.setup"></div>
 
   <details class="panel" id="plan-panel">
-    <summary><span id="plan-title">Juster og gem den aktuelle træningsplan</span></summary>
+    <summary><span id="plan-title" data-i18n="plan.title"></span></summary>
     <div class="details-body">
       <fieldset class="mode-switch">
-        <legend>Styring</legend>
-        <label><input type="radio" name="workout-mode" value="pulse" checked> Efter puls (pulsmål i % af max-puls)</label>
-        <label><input type="radio" name="workout-mode" value="power"> Efter watt (fast belastning)</label>
+        <legend data-i18n="mode.legend"></legend>
+        <label><input type="radio" name="workout-mode" value="pulse" checked> <span data-i18n="mode.pulse"></span></label>
+        <label><input type="radio" name="workout-mode" value="power"> <span data-i18n="mode.power"></span></label>
       </fieldset>
       <p id="mode-help" class="muted"></p>
       <div id="blocks"></div>
       <div class="actions">
-        <button id="add-interval" type="button">+ Interval</button>
-        <button id="add-break" type="button">+ Pause</button>
-        <button id="add-ramp" type="button">+ Rampe</button>
-        <button id="add-recovery" type="button">+ Pulsfald</button>
-        <button id="add-repeat" type="button">+ Gentagne intervaller</button>
+        <button id="add-interval" type="button" data-i18n="add.interval"></button>
+        <button id="add-break" type="button" data-i18n="add.break"></button>
+        <button id="add-ramp" type="button" data-i18n="add.ramp"></button>
+        <button id="add-recovery" type="button" data-i18n="add.recovery"></button>
+        <button id="add-repeat" type="button" data-i18n="add.repeat"></button>
       </div>
 
       <div class="subsection">
         <div class="settings">
-          <label for="preset-name">Gem som
-            <input id="preset-name" type="text" maxlength="80" placeholder="Fx Rolig intervaltræning">
+          <label for="preset-name"><span data-i18n="save.label"></span>
+            <input id="preset-name" type="text" maxlength="80" data-i18n-attr="placeholder:save.placeholder">
           </label>
-          <button id="save-preset" type="button">Gem træning</button>
+          <button id="save-preset" type="button" data-i18n="save.button"></button>
         </div>
-        <p class="muted">Gemmes på den valgte bruger under &raquo;Mine gemte træninger&laquo;. Pulsmål gemmes i procent af max-puls, så de passer til brugerens max-puls. Brug et nyt navn for at gemme en kopi.</p>
+        <p class="muted" data-i18n="save.help"></p>
       </div>
     </div>
   </details>
 
   <details class="panel" id="profile-panel">
-    <summary><span id="profile-title">Brugerprofil</span><span id="profile-hint" class="hint"></span></summary>
+    <summary><span id="profile-title" data-i18n="profile.title"></span><span id="profile-hint" class="hint"></span></summary>
     <div class="details-body">
       <div class="subsection">
         <div class="settings">
-          <label for="birth-year">Fødselsår
-            <input id="birth-year" type="number" min="1900" max="2100" step="1" placeholder="Fx 1965">
+          <label for="birth-year"><span data-i18n="profile.birthYear"></span>
+            <input id="birth-year" type="number" min="1900" max="2100" step="1" data-i18n-attr="placeholder:profile.birthYear.placeholder">
           </label>
-          <label for="sex">Køn
+          <label for="sex"><span data-i18n="profile.sex"></span>
             <select id="sex">
-              <option value="">Vælg</option>
-              <option value="male">Mand</option>
-              <option value="female">Kvinde</option>
+              <option value="" data-i18n="profile.sex.choose"></option>
+              <option value="male" data-i18n="profile.sex.male"></option>
+              <option value="female" data-i18n="profile.sex.female"></option>
             </select>
           </label>
-          <label for="weight">Vægt (kg)
-            <input id="weight" type="number" min="20" max="300" step="0.1" placeholder="Fx 75">
+          <label for="weight"><span data-i18n="profile.weight"></span>
+            <input id="weight" type="number" min="20" max="300" step="0.1" data-i18n-attr="placeholder:profile.weight.placeholder">
           </label>
         </div>
         <div class="saved-row">
-          <p class="muted">Bruges til at beregne dit kondital i konditestene.</p>
+          <p class="muted" data-i18n="profile.details.help"></p>
           <span id="details-saved" class="saved-tick" role="status"></span>
         </div>
       </div>
@@ -580,78 +581,104 @@
       <div class="subsection">
       <div class="settings">
         <fieldset>
-          <legend>Max-puls</legend>
-          <label><input type="radio" name="max-pulse-source" value="manual" checked> Vælg selv</label>
-          <label><input type="radio" name="max-pulse-source" value="birth_year"> Beregn ud fra fødselsår</label>
+          <legend data-i18n="maxPulse.legend"></legend>
+          <label><input type="radio" name="max-pulse-source" value="manual" checked> <span data-i18n="maxPulse.manual"></span></label>
+          <label><input type="radio" name="max-pulse-source" value="birth_year"> <span data-i18n="maxPulse.birthYear"></span></label>
         </fieldset>
-        <label for="max-pulse">Vælg max-puls (bpm)
+        <label for="max-pulse"><span data-i18n="maxPulse.select"></span>
           <select id="max-pulse" required>
-            <option value="">Vælg max-puls</option>
+            <option value="" data-i18n="maxPulse.placeholder"></option>
           </select>
         </label>
       </div>
       <div class="saved-row">
-        <p id="max-pulse-result" class="muted" aria-live="polite">Vælg max-puls eller indtast fødselsår.</p>
+        <p id="max-pulse-result" class="muted" aria-live="polite" data-i18n="maxPulse.prompt"></p>
         <span id="max-pulse-saved" class="saved-tick" role="status"></span>
       </div>
-      <p class="muted">Max-puls gemmes automatisk på profilen og bruges i alle træninger.</p>
+      <p class="muted" data-i18n="maxPulse.help"></p>
       </div>
 
       <div class="subsection">
         <div class="settings">
           <fieldset>
-            <legend>Pulskilde til styring</legend>
-            <label><input type="radio" name="pulse-source" value="ergometer" checked> Ergometerets pulsmåler</label>
-            <label><input type="radio" name="pulse-source" value="watch"> Smartwatch via Bluetooth LE</label>
+            <legend data-i18n="pulseSource.legend"></legend>
+            <label><input type="radio" name="pulse-source" value="ergometer" checked> <span data-i18n="pulseSource.ergometer"></span></label>
+            <label><input type="radio" name="pulse-source" value="watch"> <span data-i18n="pulseSource.watch"></span></label>
           </fieldset>
         </div>
         <span id="watch-saved" class="saved-tick" role="status"></span>
         <div id="watch-settings" hidden>
           <div class="actions" style="margin-top: .9rem">
-            <button id="scan-watches" type="button">Søg efter Bluetooth-enheder</button>
-            <label for="watch-device">Vælg smartwatch
+            <button id="scan-watches" type="button" data-i18n="watch.scan"></button>
+            <label for="watch-device"><span data-i18n="watch.select"></span>
               <select id="watch-device">
-                <option value="">Søg efter enheder først</option>
+                <option value="" data-i18n="watch.scanFirst"></option>
               </select>
             </label>
-            <button id="remove-watch" class="ghost" type="button" hidden>Fjern smartwatch</button>
+            <button id="remove-watch" class="ghost" type="button" hidden data-i18n="watch.remove"></button>
           </div>
-          <p id="watch-status" class="muted" aria-live="polite">Uret forbindes, når træningen startes. Hvis enheden står som ukendt, kan adressen hjælpe med at identificere den i Windows eller Huawei-overlayet.</p>
+          <p id="watch-status" class="muted" aria-live="polite" data-i18n="watch.initialHelp"></p>
         </div>
       </div>
 
       <div class="subsection">
         <div class="settings">
-          <label for="new-profile-name">Opret ny bruger
-            <input id="new-profile-name" type="text" maxlength="60" placeholder="Fx Anna eller Peter">
+          <label for="new-profile-name"><span data-i18n="profile.new"></span>
+            <input id="new-profile-name" type="text" maxlength="60" data-i18n-attr="placeholder:profile.new.placeholder">
           </label>
-          <button id="create-profile" type="button">Opret bruger</button>
+          <button id="create-profile" type="button" data-i18n="profile.new.button"></button>
         </div>
-        <p class="muted">Max-puls, smartwatch og gemte træninger hører til den valgte bruger.</p>
+        <p class="muted" data-i18n="profile.ownership"></p>
       </div>
     </div>
   </details>
 
   <details class="panel" id="settings-panel">
-    <summary><span id="settings-title">Indstillinger for cyklen</span><span id="settings-hint" class="hint"></span></summary>
+    <summary><span id="settings-title" data-i18n="settings.title"></span><span id="settings-hint" class="hint"></span></summary>
     <div class="details-body">
-      <div class="settings">
-        <label for="device-type">Cykeltype
-          <select id="device-type"></select>
-        </label>
-        <label for="device" id="device-label">Seriel port
-          <input id="device" type="text" placeholder="/dev/ttyUSB0 eller COM3">
-        </label>
+      <div class="subsection">
+        <h3 class="subsection-title" data-i18n="settings.bike"></h3>
+        <div class="settings">
+          <label for="device-type"><span data-i18n="bike.type"></span>
+            <select id="device-type"></select>
+          </label>
+          <label for="device" id="device-label"><span data-i18n="bike.port"></span>
+            <input id="device" type="text" data-i18n-attr="placeholder:bike.port.placeholder">
+          </label>
+        </div>
+        <div class="saved-row">
+          <p class="muted" data-i18n="bike.help"></p>
+          <span id="bike-saved" class="saved-tick" role="status"></span>
+        </div>
       </div>
-      <div class="saved-row">
-        <p class="muted">Gemmes på denne maskine og bruges, hver gang serveren starter.</p>
-        <span id="bike-saved" class="saved-tick" role="status"></span>
+
+      <div class="subsection">
+        <h3 class="subsection-title" data-i18n="settings.language"></h3>
+        <div class="settings">
+          <label for="language"><span data-i18n="settings.language.choose"></span>
+            <select id="language"></select>
+          </label>
+        </div>
+        <p class="muted" data-i18n="settings.language.help"></p>
       </div>
     </div>
   </details>
 
   <script>
     (function () {
+      I18N.apply();
+      // Language: chosen per browser; the page reloads in the new language.
+      var languageSelect = document.getElementById('language');
+      I18N.languages().forEach(function (language) {
+        var option = document.createElement('option');
+        option.value = language.code;
+        option.textContent = language.name;
+        languageSelect.appendChild(option);
+      });
+      languageSelect.value = I18N.language;
+      languageSelect.addEventListener('change', function () {
+        I18N.setLanguage(languageSelect.value);
+      });
       var maxPulse = document.getElementById('max-pulse');
       var blocks = document.getElementById('blocks');
       var summary = document.getElementById('summary');
@@ -710,7 +737,7 @@
           window.localStorage.setItem('pyergometer-profile', name);
         } catch (error) {
           status.className = 'error';
-          status.textContent = 'Profilen er valgt, men browseren kunne ikke huske seneste bruger.';
+          status.textContent = t('status.rememberProfileFailed');
         }
       }
 
@@ -726,7 +753,9 @@
       deviceTypes.forEach(function (type) {
         var option = document.createElement('option');
         option.value = type.id;
-        option.textContent = type.label;
+        // A bike type without a text in the language files keeps the name from devices.py.
+        var typeKey = 'device.' + type.id;
+        option.textContent = t(typeKey) === typeKey ? type.label : t(typeKey);
         deviceTypeSelect.appendChild(option);
       });
       deviceTypeSelect.value = @@INITIAL_DEVICE_TYPE@@;
@@ -772,15 +801,15 @@
       function updateMaxPulseResult() {
         if (maxPulseSource() === 'birth_year') {
           if (selectedAge() !== null) {
-            maxPulseResult.textContent = 'Beregnet max-puls: ' + selectedMaxPulse() +
-              ' bpm (alder ' + selectedAge() + ')';
+            maxPulseResult.textContent = t('maxPulse.calculated',
+              {pulse: selectedMaxPulse(), age: selectedAge()});
           } else {
-            maxPulseResult.textContent = 'Max-puls beregnes som 208 − (0,7 × alder).';
+            maxPulseResult.textContent = t('maxPulse.formula');
           }
         } else if (maxPulse.value) {
-          maxPulseResult.textContent = 'Valgt max-puls: ' + maxPulse.value + ' bpm';
+          maxPulseResult.textContent = t('maxPulse.chosen', {pulse: maxPulse.value});
         } else {
-          maxPulseResult.textContent = 'Vælg max-puls eller indtast fødselsår.';
+          maxPulseResult.textContent = t('maxPulse.prompt');
         }
       }
 
@@ -797,7 +826,7 @@
         if (selectedMaxPulse() !== null) return true;
         profilePanel.open = true;
         status.className = 'error';
-        status.textContent = 'Vælg max-puls på brugerprofilen ' + (activeProfile || '') + ' først.';
+        status.textContent = t('status.chooseMaxPulse', {profile: activeProfile || ''});
         return false;
       }
 
@@ -832,14 +861,14 @@
           body: JSON.stringify({action: 'save-details', profile: profileName, details: details})
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme profilen');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.saveProfile'));
             return data.profiles;
           });
         }).then(function (profiles) {
           profiles.forEach(function (profile) {
             profilesByName[profile.name] = profile;
           });
-          flashSaved(document.getElementById('details-saved'), 'Gemt på ' + profileName);
+          flashSaved(document.getElementById('details-saved'), t('saved.onProfile', {profile: profileName}));
         }).catch(function (error) {
           status.className = 'error';
           status.textContent = error.message;
@@ -862,14 +891,14 @@
           body: JSON.stringify({action: 'save-max-pulse', profile: profileName, max_pulse: payload})
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme max-puls');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.saveMaxPulse'));
             return data.profiles;
           });
         }).then(function (profiles) {
           profiles.forEach(function (profile) {
             profilesByName[profile.name] = profile;
           });
-          flashSaved(maxPulseSaved, 'Gemt på ' + profileName);
+          flashSaved(maxPulseSaved, t('saved.onProfile', {profile: profileName}));
         }).catch(function (error) {
           status.className = 'error';
           status.textContent = error.message;
@@ -878,15 +907,15 @@
 
       function currentBlockTarget(block, elapsed, plan) {
         if (!block) return '';
-        if (block.type === 'recovery') return 'Sid stille · pulsfald';
-        if (block.type === 'interval') return 'Mål ' + block.pulse + ' bpm';
-        if (block.type === 'power') return 'Mål ' + block.power + ' W';
+        if (block.type === 'recovery') return t('target.recovery');
+        if (block.type === 'interval') return t('target.bpm', {value: block.pulse});
+        if (block.type === 'power') return t('target.watts', {value: block.power});
         if (block.type === 'ramp') {
           var value = Math.floor(block.start_value + (block.end_value - block.start_value) *
             (elapsed - block.start) / (block.end - block.start) + 0.5);
-          return 'Mål ' + value + (block.kind === 'pulse' ? ' bpm' : ' W');
+          return t(block.kind === 'pulse' ? 'target.bpm' : 'target.watts', {value: value});
         }
-        return (plan && plan.mode === 'power' ? 'Mål ' : 'Pause · ') + block.power + ' W';
+        return t(plan && plan.mode === 'power' ? 'target.watts' : 'target.pause', {value: block.power});
       }
 
       function updatePulseBadge(data) {
@@ -897,14 +926,14 @@
         pulseBadge.classList.toggle('idle', !live);
         pulseNow.textContent = live ? last.pulse : '--';
         pulseBadge.setAttribute('aria-label', live
-          ? 'Aktuel puls: ' + last.pulse + ' slag i minuttet'
-          : 'Aktuel puls: ingen måling');
+          ? t('pulse.aria.live', {pulse: last.pulse})
+          : t('pulse.aria.none'));
         if (!live) {
-          pulseTarget.textContent = data && data.active ? 'Venter på puls' : 'Ingen måling';
+          pulseTarget.textContent = t(data && data.active ? 'pulse.waiting' : 'pulse.none');
           return;
         }
         if (data.limited) {
-          pulseTarget.textContent = 'Pulsgrænse · sænket';
+          pulseTarget.textContent = t('pulse.limited');
           return;
         }
         if (Date.now() < targetFeedbackUntil) return;
@@ -947,21 +976,20 @@
                 row.querySelector('.recovery-seconds').validity.valid) {
               totalSeconds += count * (workSeconds + recoverySeconds);
             }
-            lines.push(count + ' gentagelser · ' + workSeconds + ' sek. hårdt / ' +
-              recoverySeconds + ' sek. let');
+            lines.push(t('summary.repeat', {count: count, work: workSeconds, recovery: recoverySeconds}));
             if (powerMode) {
-              lines.push('Mål: ' + row.querySelector('.work-power').value + ' W hårdt / ' +
-                row.querySelector('.recovery-power').value + ' W let');
+              lines.push(t('summary.repeat.watts', {work: row.querySelector('.work-power').value,
+                recovery: row.querySelector('.recovery-power').value}));
             } else if (selectedMax) {
-              lines.push('Mål: ' + row.querySelector('.work-percent').value + '% hårdt / ' +
-                row.querySelector('.recovery-percent').value + '% let');
+              lines.push(t('summary.repeat.percent', {work: row.querySelector('.work-percent').value,
+                recovery: row.querySelector('.recovery-percent').value}));
             }
             return;
           }
           if (type === 'recovery') {
             var recoverySeconds = parseInt(row.querySelector('.seconds').value, 10) || 0;
             totalSeconds += recoverySeconds;
-            lines.push('Pulsfald ' + recoverySeconds + ' sek.');
+            lines.push(t('summary.recovery', {seconds: recoverySeconds}));
             return;
           }
           var minutesField = row.querySelector('.minutes');
@@ -970,29 +998,29 @@
             totalSeconds += Math.round(minutes * 60);
           }
           if (type === 'interval' && powerMode) {
-            lines.push('Trin ' + (index + 1) + ': ' + row.querySelector('.power').value + ' W');
+            lines.push(t('summary.step', {number: index + 1, watts: row.querySelector('.power').value}));
           } else if (type === 'interval') {
             var percent = parseInt(row.querySelector('.percent').value, 10);
             if (selectedMax && isFinite(percent)) {
-              lines.push('Interval ' + (index + 1) + ': ' +
-                Math.floor((selectedMax * percent + 50) / 100) + ' bpm (' + percent + '%)');
+              lines.push(t('summary.interval', {number: index + 1,
+                pulse: Math.floor((selectedMax * percent + 50) / 100), percent: percent}));
             }
           } else if (type === 'ramp' && powerMode) {
-            lines.push('Rampe ' + row.querySelector('.start-power').value + '→' +
-              row.querySelector('.end-power').value + ' W');
+            lines.push(t('summary.ramp.watts', {from: row.querySelector('.start-power').value,
+              to: row.querySelector('.end-power').value}));
           } else if (type === 'ramp') {
-            lines.push('Rampe ' + row.querySelector('.start-percent').value + '→' +
-              row.querySelector('.end-percent').value + '%');
+            lines.push(t('summary.ramp.percent', {from: row.querySelector('.start-percent').value,
+              to: row.querySelector('.end-percent').value}));
           }
         });
 
         var totalMinutes = Math.floor(totalSeconds / 60);
         var remainingSeconds = totalSeconds % 60;
         summary.textContent = rows.length
-          ? 'Samlet varighed: ' + totalMinutes + ' min' +
-            (remainingSeconds ? ' ' + remainingSeconds + ' sek.' : '') +
+          ? t(remainingSeconds ? 'summary.total.seconds' : 'summary.total',
+              {minutes: totalMinutes, seconds: remainingSeconds}) +
             (lines.length ? ' · ' + lines.join(' · ') : '')
-          : 'Tilføj et interval eller en pause.';
+          : t('summary.empty');
         renderChart(latestChart);
         updateWorkoutName();
         updatePulseLimitToggle();
@@ -1009,12 +1037,12 @@
         row.hidden = workoutMode !== 'power' || !blocks.children.length;
         pulseLimitBox.disabled = busy || !maximum;
         if (!maximum) {
-          text.textContent = 'Pulsgrænse: ikke aktiv, fordi brugerprofilen ikke har en max-puls.';
+          text.textContent = t('limit.inactive');
         } else if (pulseLimitBox.checked) {
-          text.textContent = 'Pulsgrænse: sænk belastningen ved ' + PULSE_LIMIT_PERCENT +
-            ' % af max-puls (' + Math.floor(maximum * PULSE_LIMIT_PERCENT / 100) + ' bpm)';
+          text.textContent = t('limit.on', {percent: PULSE_LIMIT_PERCENT,
+            pulse: Math.floor(maximum * PULSE_LIMIT_PERCENT / 100)});
         } else {
-          text.textContent = 'Pulsgrænse slået fra for denne træning';
+          text.textContent = t('limit.off');
         }
         row.classList.toggle('off', !maximum || !pulseLimitBox.checked);
       }
@@ -1074,11 +1102,12 @@
         // Confirm under the heart, not in the top bar: a longer status text there
         // wraps on a phone, changes the bar's height and makes the chart jump.
         if (block.type === 'interval') {
-          showTargetFeedback('Mål ' + Math.floor((plan.max_pulse * values[0] + 50) / 100) + ' bpm');
+          showTargetFeedback(t('target.bpm', {value: Math.floor((plan.max_pulse * values[0] + 50) / 100)}));
         } else if (block.type === 'ramp') {
-          showTargetFeedback('Rampe ' + values[0] + '→' + values[1] + unit);
+          showTargetFeedback(t(pulseTarget ? 'summary.ramp.percent' : 'summary.ramp.watts',
+            {from: values[0], to: values[1]}));
         } else {
-          showTargetFeedback('Mål ' + values[0] + ' W');
+          showTargetFeedback(t('target.watts', {value: values[0]}));
         }
       }
 
@@ -1116,7 +1145,7 @@
           body: JSON.stringify(plan)
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke ændre den aktive træning');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.liveUpdate'));
             return data;
           });
         }).then(function () {
@@ -1126,7 +1155,7 @@
           }
         }).catch(function (error) {
           status.className = 'error';
-          status.textContent = 'Live ændring blev ikke gennemført: ' + error.message;
+          status.textContent = t('status.liveUpdateFailed', {error: error.message});
         }).then(function () {
           liveUpdateInFlight = false;
           if (liveUpdateQueued) {
@@ -1307,31 +1336,29 @@
           var from = block.start + ASTRAND_SETTLE;
           var middle = from + 60;
           if (now < from) {
-            text = 'Åstrand-test: hold en jævn kadence (ca. 60 omdr./min), mens pulsen stabiliseres. ' +
-              'Pulsen måles fra ' + clock(from) + ' til ' + clock(block.end) + '.';
+            text = t('guide.astrand.settle', {from: clock(from), to: clock(block.end)});
             if (now >= block.start + 180 && last.pulse >= 20 && (last.pulse < 115 || last.pulse > 170)) {
               warn = true;
-              text += ' Pulsen (' + last.pulse + ') ser ud til at ende ' +
-                (last.pulse < 115 ? 'under 120: vælg højere' : 'over 170: vælg lavere') +
-                ' belastning næste gang.';
+              text += ' ' + t(last.pulse < 115 ? 'guide.astrand.tooLow' : 'guide.astrand.tooHigh',
+                {pulse: last.pulse});
             }
           } else if (now < middle) {
-            text = 'Måler puls ' + clock(from) + '-' + clock(middle) + ' · gennemsnit indtil nu: ' +
-              (average(from, middle) || '–') + '. Hold kadencen jævn.';
+            text = t('guide.astrand.first', {from: clock(from), to: clock(middle),
+              average: average(from, middle) || '–'});
           } else {
             var first = average(from, middle);
             var second = average(middle, block.end);
             var difference = first && second ? Math.abs(second - first) : null;
-            text = 'Måler puls ' + clock(middle) + '-' + clock(block.end) + ' · ' + clock(from) + '-' +
-              clock(middle) + ': ' + (first || '–') + ' · nu: ' + (second || '–') +
-              (difference !== null ? ' · forskel ' + difference + ' (højst 5)' : '') + '.';
+            text = t(difference !== null ? 'guide.astrand.second.difference' : 'guide.astrand.second',
+              {from: clock(middle), to: clock(block.end), firstFrom: clock(from), firstTo: clock(middle),
+               first: first || '–', now: second || '–', difference: difference});
             if (difference !== null && difference > 5) {
               warn = true;
-              text += ' Pulsen er ikke stabil endnu.';
+              text += ' ' + t('guide.astrand.unstable');
             }
             if (second && (second < 120 || second > 170)) {
               warn = true;
-              text += ' Pulsen skal ligge mellem 120 og 170, for at testen er gyldig.';
+              text += ' ' + t('guide.astrand.range');
             }
           }
         } else if (block.test === 'ramp') {
@@ -1339,13 +1366,12 @@
             .reduce(function (highest, point) { return Math.max(highest, point.pulse || 0); }, 0);
           var watts = Math.floor(block.start_value + (block.end_value - block.start_value) *
             (now - block.start) / (block.end - block.start) + 0.5);
-          text = 'Rampetest: nu ' + watts + ' W, +20 W i minuttet. Kør så længe du kan, og tryk Stop, ' +
-            'når du ikke kan mere. Højeste puls indtil nu: ' + (peak || '–') + '.';
+          text = t('guide.ramp', {watts: watts, peak: peak || '–'});
         } else {
           var startPulse = average(block.start - 3, block.start + 2);
-          text = 'Pulsfald: sid stille til ' + clock(Math.min(block.end, block.start + 60)) +
-            ' · puls ved start (' + clock(block.start) + '): ' + (startPulse || '–') + ' · nu: ' +
-            (last.pulse >= 20 ? last.pulse : '–') + '.';
+          text = t('guide.recovery', {until: clock(Math.min(block.end, block.start + 60)),
+            start: clock(block.start), startPulse: startPulse || '–',
+            now: last.pulse >= 20 ? last.pulse : '–'});
         }
         guide.textContent = text;
         guide.classList.toggle('warn', warn);
@@ -1369,11 +1395,10 @@
         pulseChart.textContent = '';
         chartHelp.hidden = false;
         if (!plan || !plan.duration || !plan.blocks.length) {
-          document.getElementById('chart-title').textContent = workoutMode === 'power'
-            ? 'Belastning og puls gennem træningen' : 'Puls gennem træningen';
-          chartMessage.textContent = workoutMode === 'power'
-            ? 'Tilføj trin, ramper eller gentagelser for at se grafen.'
-            : 'Vælg max-puls og tilføj træningsintervaller for at se grafen.';
+          document.getElementById('chart-title').textContent =
+            t(workoutMode === 'power' ? 'chart.title.power' : 'chart.title.pulse');
+          chartMessage.textContent =
+            t(workoutMode === 'power' ? 'chart.message.emptyPower' : 'chart.message.emptyPulse');
           return;
         }
 
@@ -1381,15 +1406,9 @@
         document.getElementById('legend-pulse').hidden = powerMode;
         document.getElementById('legend-pause').hidden = powerMode;
         document.getElementById('legend-watt').hidden = !powerMode;
-        document.getElementById('chart-title').textContent = powerMode
-          ? 'Belastning og puls gennem træningen' : 'Puls gennem træningen';
-        chartHelp.textContent = powerMode
-          ? 'Træk i toppen af en orange søjle for at ændre belastningen, eller i en orange diamant ' +
-            'for at ændre varigheden. I gentagelser ændres alle søjler af samme slags. ' +
-            'Under træning slår ændringer igennem ved næste regulering.'
-          : 'Træk i en blå mållinje for at ændre pulsen, eller i en orange diamant for at ændre ' +
-            'varigheden. I gentagelser ændres alle søjler af samme slags. ' +
-            'Under træning slår ændringer igennem ved næste regulering.';
+        document.getElementById('chart-title').textContent =
+          t(powerMode ? 'chart.title.power' : 'chart.title.pulse');
+        chartHelp.textContent = t(powerMode ? 'chart.help.power' : 'chart.help.pulse');
         var width = 900;
         var height = 400;
         var left = 70;
@@ -1412,12 +1431,10 @@
         var y = function (bpm) { return bottom - bpm / maxBpm * plotHeight; };
         var yWatt = function (watts) { return bottom - watts / maxWatt * plotHeight; };
 
-        pulseChart.appendChild(svgElement('title', {}, powerMode
-          ? 'Planlagt belastning og målt puls under træningen'
-          : 'Ønsket og målt puls under træningen'));
-        pulseChart.appendChild(svgElement('desc', {}, powerMode
-          ? 'Søjler viser belastningen i watt, den røde linje viser målt puls på højre akse.'
-          : 'Søjler viser intervalmål i bpm, røde punkter viser målt puls og en stiplet streg viser forløbet.'));
+        pulseChart.appendChild(svgElement('title', {},
+          t(powerMode ? 'chart.svg.title.power' : 'chart.svg.title.pulse')));
+        pulseChart.appendChild(svgElement('desc', {},
+          t(powerMode ? 'chart.svg.desc.power' : 'chart.svg.desc.pulse')));
 
         var axisMax = powerMode ? maxWatt : maxBpm;
         var axisStep = powerMode ? (maxWatt > 500 ? 100 : 50) : (percentScale ? 20 : 50);
@@ -1487,11 +1504,9 @@
                 'data-drag-type': 'target', 'data-drag-kind': isWatt ? 'power' : 'pulse',
                 'data-block-index': block.index,
                 'data-repeat-phase': block.repeat_phase || '',
-                'aria-label': block.repeat_phase
-                  ? 'Træk for at ændre alle ' + (block.repeat_phase === 'work' ? 'hårde' : 'lette') +
-                    ' intervaller i gentagelsen'
-                  : isWatt ? 'Træk for at ændre belastningen'
-                    : 'Træk for at ændre intervallets ønskede puls',
+                'aria-label': t(block.repeat_phase
+                  ? (block.repeat_phase === 'work' ? 'chart.drag.repeatWork' : 'chart.drag.repeatRecovery')
+                  : isWatt ? 'chart.drag.power' : 'chart.drag.pulse'),
                 style: 'cursor:ns-resize'
               }));
             }
@@ -1517,7 +1532,7 @@
               pulseChart.appendChild(svgElement('text', {
                 x: barX + barWidth / 2, y: top + 15,
                 'text-anchor': 'middle', fill: '#1b6b33', 'font-size': 11
-              }, 'Pulsfald'));
+              }, t('chart.recovery')));
             }
           } else {
             pulseChart.appendChild(svgElement('rect', {
@@ -1595,10 +1610,9 @@
               fill: 'transparent', 'pointer-events': 'all',
               'data-drag-type': 'duration', 'data-block-index': block.index,
               'data-repeat-phase': block.repeat_phase || '',
-              'aria-label': block.repeat_phase
-                ? 'Træk for at ændre varigheden af alle ' +
-                  (block.repeat_phase === 'work' ? 'hårde' : 'lette') + ' intervaller'
-                : 'Træk for at ændre sessionens varighed',
+              'aria-label': t(block.repeat_phase
+                ? (block.repeat_phase === 'work' ? 'chart.drag.durationWork' : 'chart.drag.durationRecovery')
+                : 'chart.drag.duration'),
               style: 'cursor:ew-resize'
             }));
           });
@@ -1607,37 +1621,31 @@
           x: 18, y: top + plotHeight / 2,
           transform: 'rotate(-90 18 ' + (top + plotHeight / 2) + ')',
           'text-anchor': 'middle', fill: '#263442', 'font-size': 13
-        }, powerMode ? 'Belastning (W)' : percentScale ? 'Puls (% af max)' : 'Puls (bpm)'));
+        }, t(powerMode ? 'chart.axis.power' : percentScale ? 'chart.axis.percent' : 'chart.axis.bpm')));
         if (powerMode) {
           pulseChart.appendChild(svgElement('text', {
             x: 892, y: top + plotHeight / 2,
             transform: 'rotate(90 892 ' + (top + plotHeight / 2) + ')',
             'text-anchor': 'middle', fill: '#bf3434', 'font-size': 13
-          }, 'Målt puls (bpm)'));
+          }, t('chart.axis.measured')));
         }
         pulseChart.appendChild(svgElement('text', {
           x: left + plotWidth / 2, y: height - 8,
           'text-anchor': 'middle', fill: '#263442', 'font-size': 13
-        }, tickStep < 60 ? 'Tid (min:sek)' : 'Tid (minutter)'));
+        }, t(tickStep < 60 ? 'chart.axis.timeSeconds' : 'chart.axis.timeMinutes')));
 
         if (data && data.mode === 'demo') {
-          chartMessage.textContent = data.active
-            ? 'Livedemo: målingerne er simulerede. Grafen viser demoens plan; ændringer gælder næste gang.'
-            : 'Livedemo afsluttet. De røde målinger er simulerede, og planen kan redigeres.';
+          chartMessage.textContent = t(data.active ? 'chart.message.demo' : 'chart.message.demoDone');
         } else if (data && data.mode === 'real' && data.active && data.limited) {
-          chartMessage.textContent = 'Pulsgrænsen er nået, så belastningen sænkes midlertidigt, ' +
-            'indtil pulsen falder igen.';
+          chartMessage.textContent = t('chart.message.limited');
         } else if (data && data.mode === 'real') {
-          chartMessage.textContent = data.active
-            ? 'Live: målt puls registreres cirka én gang i sekundet.'
-            : 'Træningen er afsluttet. Grafen viser målingerne, og planen kan redigeres.';
+          chartMessage.textContent = t(data.active ? 'chart.message.live' : 'chart.message.done');
         } else if (powerMode) {
-          chartMessage.textContent = 'Grafen viser den planlagte belastning i watt. ' +
-            'Målt puls vises på højre akse under træningen.';
+          chartMessage.textContent = t('chart.message.power');
         } else if (percentScale) {
-          chartMessage.textContent = 'Grafen viser dine pulsmål i procent af max. Vælg max-puls for at se bpm.';
+          chartMessage.textContent = t('chart.message.percent');
         } else {
-          chartMessage.textContent = 'Grafen viser planlagte pulsmål. Afspil livedemo for simulerede pulsmålinger.';
+          chartMessage.textContent = t('chart.message.pulse');
         }
       }
 
@@ -1778,7 +1786,7 @@
         var revision = chartRevision;
         fetch('/api/chart').then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke hente pulsgrafens data');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.chart'));
             return data;
           });
         }).then(function (data) {
@@ -1805,7 +1813,7 @@
           body: JSON.stringify({})
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke nulstille grafen');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.resetChart'));
             latestChart = {plan: null, elapsed: 0, points: [], mode: 'preview', active: false};
             editedChartPlan = null;
             renderChart(latestChart);
@@ -1839,59 +1847,58 @@
         if (values.test) row.dataset.test = values.test;
 
         var title = document.createElement('h3');
-        title.textContent = values.label || (
-          type === 'repeat' ? (powerMode ? 'Gentagne watt-intervaller (hårdt / let)'
-            : 'Gentagne pulsintervaller (hårdt / let)')
-            : type === 'recovery' ? 'Pulsfald – sid stille på cyklen'
-            : type === 'ramp' ? 'Rampe'
-              : type === 'break' ? 'Pause med lav belastning'
-                : powerMode ? 'Trin med fast belastning' : 'Arbejdsinterval');
+        title.textContent = values.label || t(
+          type === 'repeat' ? (powerMode ? 'block.repeat.power' : 'block.repeat.pulse')
+            : type === 'recovery' ? 'block.recovery'
+            : type === 'ramp' ? 'block.ramp'
+              : type === 'break' ? 'block.break'
+                : powerMode ? 'block.step' : 'block.interval');
         row.appendChild(title);
 
         var fields = document.createElement('div');
         fields.className = 'fields';
         if (type === 'repeat') {
-          fields.appendChild(makeField('Antal gentagelser', 'number',
+          fields.appendChild(makeField(t('field.count'), 'number',
             values.count || 13, 1, 100, 1, 'count'));
-          fields.appendChild(makeField('Hårdt interval (sek.)', 'number',
+          fields.appendChild(makeField(t('field.workSeconds'), 'number',
             values.work_seconds || 30, 1, 3600, 1, 'work-seconds'));
           fields.appendChild(powerMode
-            ? makeField('Hårdt (W)', 'number', values.work_power || 250, 25, 1000, 1, 'work-power')
-            : makeField('Hårdt mål (% af max)', 'number',
+            ? makeField(t('field.workPower'), 'number', values.work_power || 250, 25, 1000, 1, 'work-power')
+            : makeField(t('field.workPercent'), 'number',
               values.work_percent || 85, 1, 100, 1, 'work-percent'));
-          fields.appendChild(makeField('Let interval (sek.)', 'number',
+          fields.appendChild(makeField(t('field.recoverySeconds'), 'number',
             values.recovery_seconds || 30, 1, 3600, 1, 'recovery-seconds'));
           fields.appendChild(powerMode
-            ? makeField('Let (W)', 'number', values.recovery_power || 120, 25, 1000, 1, 'recovery-power')
-            : makeField('Let mål (% af max)', 'number',
+            ? makeField(t('field.recoveryPower'), 'number', values.recovery_power || 120, 25, 1000, 1, 'recovery-power')
+            : makeField(t('field.recoveryPercent'), 'number',
               values.recovery_percent || 60, 1, 100, 1, 'recovery-percent'));
         } else if (type === 'recovery') {
-          fields.appendChild(makeField('Varighed (sek.)', 'number',
+          fields.appendChild(makeField(t('field.seconds'), 'number',
             values.seconds || 60, 30, 300, 5, 'seconds'));
         } else if (type === 'ramp') {
           if (powerMode) {
-            fields.appendChild(makeField('Start (W)', 'number',
+            fields.appendChild(makeField(t('field.startPower'), 'number',
               values.start_power || 100, 25, 1000, 1, 'start-power'));
-            fields.appendChild(makeField('Slut (W)', 'number',
+            fields.appendChild(makeField(t('field.endPower'), 'number',
               values.end_power || 200, 25, 1000, 1, 'end-power'));
           } else {
-            fields.appendChild(makeField('Start (% af max)', 'number',
+            fields.appendChild(makeField(t('field.startPercent'), 'number',
               values.start_percent || 55, 1, 100, 1, 'start-percent'));
-            fields.appendChild(makeField('Slut (% af max)', 'number',
+            fields.appendChild(makeField(t('field.endPercent'), 'number',
               values.end_percent || 75, 1, 100, 1, 'end-percent'));
           }
         } else if (type === 'interval' && powerMode) {
-          fields.appendChild(makeField('Belastning (W)', 'number',
+          fields.appendChild(makeField(t('field.power'), 'number',
             values.power || 150, 25, 1000, 1, 'power'));
         } else if (type === 'interval') {
-          fields.appendChild(makeField('Ønsket puls (% af max)', 'number',
+          fields.appendChild(makeField(t('field.percent'), 'number',
             values.percent || 70, 1, 100, 1, 'percent'));
         } else {
-          fields.appendChild(makeField('Belastning (W)', 'number',
+          fields.appendChild(makeField(t('field.power'), 'number',
             values.power || 60, 25, 400, 5, 'power'));
         }
         if (type !== 'repeat' && type !== 'recovery') {
-          fields.appendChild(makeField('Varighed (min)', 'number',
+          fields.appendChild(makeField(t('field.minutes'), 'number',
             values.minutes || (type === 'break' ? 2 : 5), 0.5, 720, 0.5, 'minutes'));
         }
         row.appendChild(fields);
@@ -1899,8 +1906,8 @@
         var actions = document.createElement('div');
         actions.className = 'actions';
         [
-          ['Flyt op', -1],
-          ['Flyt ned', 1]
+          [t('block.moveUp'), -1],
+          [t('block.moveDown'), 1]
         ].forEach(function (item) {
           var move = document.createElement('button');
           move.type = 'button';
@@ -1917,7 +1924,7 @@
 
         var remove = document.createElement('button');
         remove.type = 'button';
-        remove.textContent = 'Fjern';
+        remove.textContent = t('block.remove');
         remove.addEventListener('click', function () {
           blocks.removeChild(row);
           updateSummary();
@@ -1941,14 +1948,11 @@
         var load = profile.sex === 'male' ? 100 : 75;
         return {
           mode: 'power',
-          message: 'Åstrand-testen er klar: 3 min opvarmning, 6 min ved ' + load + ' W (3:00-9:00) og ' +
-            'pulsfald (9:00-10:00). Pulsen måles fra 7:00 til 9:00, når den har stabiliseret sig, og ' +
-            'skal ende mellem 120 og 170 (forslag: kvinder 75 W, mænd 100 W, mere hvis du er i god ' +
-            'form). Hold en jævn kadence på ca. 60 omdr./min.',
+          message: t('template.message.astrand', {watts: load}),
           blocks: [
-            {type: 'interval', label: 'Opvarmning', minutes: 3, power: Math.max(25, Math.round(load / 10) * 5)},
-            {type: 'interval', label: 'Åstrand-test: 6 min ved fast belastning; pulsen måles de sidste 2 min',
-             minutes: 6, power: load, test: 'astrand'},
+            {type: 'interval', label: t('template.block.warmup'), minutes: 3,
+             power: Math.max(25, Math.round(load / 10) * 5)},
+            {type: 'interval', label: t('template.block.astrand'), minutes: 6, power: load, test: 'astrand'},
             {type: 'recovery', seconds: 60}
           ]
         };
@@ -1961,10 +1965,9 @@
         document.querySelector('input[name="workout-mode"][value="' + workoutMode + '"]').checked = true;
         var powerMode = workoutMode === 'power';
         document.getElementById('add-break').hidden = powerMode;
-        document.getElementById('add-interval').textContent = powerMode ? '+ Trin' : '+ Interval';
-        document.getElementById('mode-help').textContent = powerMode
-          ? 'Belastningen følger planen. Kommer pulsen over 95 % af max-puls, sænkes den automatisk.'
-          : 'Belastningen reguleres, så pulsen holder sig på målet.';
+        document.getElementById('add-interval').textContent = t(powerMode ? 'add.step' : 'add.interval');
+        document.getElementById('mode-help').textContent =
+          t(powerMode ? 'mode.help.power' : 'mode.help.pulse');
         if (previous) {
           // Durations and repeats are kept; targets get the new mode's defaults,
           // except that a pause becomes a watt step at the same load.
@@ -1991,8 +1994,8 @@
       }
 
       function workoutLabel() {
-        if (!workoutName) return 'Ny træning';
-        return workoutName + (workoutModified() ? ' (ændret)' : '');
+        if (!workoutName) return t('workout.new');
+        return workoutModified() ? t('workout.modifiedName', {name: workoutName}) : workoutName;
       }
 
       function setWorkoutName(name) {
@@ -2006,15 +2009,15 @@
         var running = chart && chart.active && chart.mode !== 'preview' && chart.plan;
         workoutNameState.className = 'muted';
         if (running) {
-          workoutNameElement.textContent = chart.plan.name || 'Ny træning';
-          workoutNameState.textContent = chart.mode === 'demo' ? 'Livedemo' : 'Kører';
+          workoutNameElement.textContent = chart.plan.name || t('workout.new');
+          workoutNameState.textContent = t(chart.mode === 'demo' ? 'workout.state.demo' : 'workout.state.running');
           workoutNameState.className = 'running';
         } else if (workoutName) {
           workoutNameElement.textContent = workoutName;
-          workoutNameState.textContent = workoutModified() ? 'Ændret, ikke gemt' : '';
+          workoutNameState.textContent = workoutModified() ? t('workout.state.modified') : '';
         } else {
-          workoutNameElement.textContent = blocks.children.length ? 'Ny træning' : 'Ingen træning valgt';
-          workoutNameState.textContent = blocks.children.length ? 'Ikke gemt' : '';
+          workoutNameElement.textContent = t(blocks.children.length ? 'workout.new' : 'workout.none');
+          workoutNameState.textContent = blocks.children.length ? t('workout.state.unsaved') : '';
         }
       }
 
@@ -2083,7 +2086,7 @@
         savedPresets.textContent = '';
         var placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = 'Vælg opsætning';
+        placeholder.textContent = t('choose.saved.placeholder');
         savedPresets.appendChild(placeholder);
         presets.forEach(function (preset) {
           var option = document.createElement('option');
@@ -2103,7 +2106,7 @@
           option.textContent = profile.name;
           userProfile.appendChild(option);
         });
-        if (!profiles.length) throw new Error('Opret en brugerprofil for at fortsætte.');
+        if (!profiles.length) throw new Error(t('status.noProfiles'));
         activeProfile = profilesByName[selectedName] ? selectedName : profiles[0].name;
         userProfile.value = activeProfile;
         rememberProfile(activeProfile);
@@ -2125,35 +2128,34 @@
         watchDevice.textContent = '';
         var option = document.createElement('option');
         option.value = '';
-        option.textContent = watch ? 'Brug gemt smartwatch' : 'Søg efter enheder først';
+        option.textContent = t(watch ? 'watch.useSaved' : 'watch.scanFirst');
         watchDevice.appendChild(option);
         if (watch) {
           var savedOption = document.createElement('option');
           savedOption.value = watch.address;
-          savedOption.textContent = watch.name + ' · gemt for ' + activeProfile +
-            ' (' + watch.address + ')';
+          savedOption.textContent = t('watch.savedFor',
+            {name: watch.name, profile: activeProfile, address: watch.address});
           savedOption.dataset.name = watch.name;
           watchDevice.appendChild(savedOption);
           watchDevice.value = watch.address;
           watchStatus.className = 'muted';
-          watchStatus.textContent = 'Gemt smartwatch: ' + watch.name +
-            '. Appen prøver at forbinde direkte ved træningsstart; søg kun igen, hvis forbindelsen fejler.';
+          watchStatus.textContent = t('watch.savedStatus', {name: watch.name});
         } else {
           watchStatus.className = 'muted';
-          watchStatus.textContent = 'Søg efter og vælg dit smartwatch. Valget gemmes på denne brugerprofil.';
+          watchStatus.textContent = t('watch.choosePrompt');
         }
       }
 
       function initializeProfiles() {
         return fetch('/api/profiles').then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke hente brugerprofiler');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.profiles'));
             var savedName = null;
             try {
               savedName = window.localStorage.getItem('pyergometer-profile');
             } catch (error) {
               status.className = 'error';
-              status.textContent = 'Browseren kunne ikke hente senest brugte brugerprofil.';
+              status.textContent = t('status.readProfileFailed');
             }
             renderProfiles(data.profiles, savedName);
             return data.profiles;
@@ -2165,7 +2167,7 @@
         if (!activeProfile) return Promise.resolve([]);
         return fetch('/api/presets?profile=' + encodeURIComponent(activeProfile)).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke hente gemte opsætninger');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.presets'));
             updatePresetOptions(data.presets);
             return data.presets;
           });
@@ -2203,7 +2205,7 @@
         var name = newProfileName.value.trim();
         if (!name) {
           status.className = 'error';
-          status.textContent = 'Skriv et navn til den nye brugerprofil.';
+          status.textContent = t('status.profileNameMissing');
           newProfileName.focus();
           return;
         }
@@ -2213,7 +2215,7 @@
           body: JSON.stringify({action: 'create', name: name})
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke oprette brugerprofil');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.createProfile'));
             return data.profiles;
           });
         }).then(function (profiles) {
@@ -2223,7 +2225,7 @@
           return resetChart().then(loadPresetList);
         }).then(function () {
           status.className = 'success';
-          status.textContent = 'Brugerprofilen blev oprettet. Gemte træningsopsætninger deles ikke mellem profiler.';
+          status.textContent = t('status.profileCreated');
         }).catch(function (error) {
           status.className = 'error';
           status.textContent = error.message;
@@ -2239,12 +2241,12 @@
           body: JSON.stringify({action: 'remove-watch', profile: profileName})
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke fjerne smartwatch');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.removeWatch'));
             return data.profiles;
           });
         }).then(function (profiles) {
           renderProfiles(profiles, profileName);
-          flashSaved(watchSaved, 'Smartwatch fjernet fra ' + profileName);
+          flashSaved(watchSaved, t('saved.watchRemoved', {profile: profileName}));
         }).catch(function (error) {
           status.className = 'error';
           status.textContent = error.message;
@@ -2264,12 +2266,12 @@
           })
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme smartwatch');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.saveWatch'));
             return data.profiles;
           });
         }).then(function (profiles) {
           renderProfiles(profiles, activeProfile);
-          flashSaved(watchSaved, 'Smartwatch gemt på ' + activeProfile);
+          flashSaved(watchSaved, t('saved.watch', {profile: activeProfile}));
         }).catch(function (error) {
           status.className = 'error';
           status.textContent = error.message;
@@ -2281,14 +2283,14 @@
         status.textContent = '';
         if (!presetName.value.trim()) {
           status.className = 'error';
-          status.textContent = 'Skriv et navn til træningsopsætningen.';
+          status.textContent = t('status.presetNameMissing');
           presetName.focus();
           return;
         }
         var plan = getPlan();
         if (!plan.blocks.length) {
           status.className = 'error';
-          status.textContent = 'Tilføj mindst ét træningselement.';
+          status.textContent = t('status.noBlocks');
           return;
         }
         var inputs = blocks.querySelectorAll('input');
@@ -2308,12 +2310,12 @@
           })
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme opsætningen');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.savePreset'));
             updatePresetOptions(data.presets);
             savedPresets.value = '';
             setWorkoutName(presetName.value.trim());
             status.className = 'success';
-            status.textContent = 'Træningsopsætningen blev gemt lokalt.';
+            status.textContent = t('status.presetSaved');
           });
         }).catch(function (error) {
           status.className = 'error';
@@ -2333,7 +2335,7 @@
       function showLoaded(name, before) {
         // Undo is only offered when there was a plan to go back to.
         planBeforeLoad = before && before.blocks.length ? before : null;
-        document.getElementById('load-note-text').textContent = 'Indlæst: ' + name;
+        document.getElementById('load-note-text').textContent = t('load.loaded', {name: name});
         document.getElementById('undo-load').hidden = !planBeforeLoad;
         document.getElementById('load-note').hidden = false;
       }
@@ -2353,7 +2355,7 @@
         updateSummary();
         document.getElementById('load-note').hidden = true;
         status.className = 'success';
-        status.textContent = 'Den forrige plan er tilbage.';
+        status.textContent = t('load.undone');
         resetChart().catch(function () { /* the chart refreshes on the next poll */ });
       });
 
@@ -2367,7 +2369,7 @@
           var preset = presets.filter(function (item) {
             return item.name === selectedName;
           })[0];
-          if (!preset) throw new Error('Den gemte opsætning blev ikke fundet.');
+          if (!preset) throw new Error(t('status.presetMissing'));
           applyPreset(preset);
           savedPresets.value = '';
           showLoaded(preset.name, before);
@@ -2384,7 +2386,7 @@
         if (workoutMode === 'pulse' && !requireMaxPulse()) return;
         if (!plan.blocks.length) {
           status.className = 'error';
-          status.textContent = 'Tilføj mindst ét træningselement før livedemo.';
+          status.textContent = t('status.demoEmpty');
           return;
         }
         fetch('/api/demo', {
@@ -2393,12 +2395,12 @@
           body: JSON.stringify(plan)
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke starte livedemo');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.demo'));
             return data;
           });
         }).then(function () {
           status.className = 'success';
-          status.textContent = 'Livedemo startet. Ingen ergometer tilsluttes.';
+          status.textContent = t('status.demoStarted');
           pollChart();
         }).catch(function (error) {
           status.className = 'error';
@@ -2408,30 +2410,27 @@
 
       // Consecutive failed status polls; a single miss (e.g. a server restart) is ignored.
       var statusFailures = 0;
-      var DISCONNECTED_TEXT = 'Mistede forbindelsen til pyergometer-serveren. Prøver igen …';
-
-      function danishNumber(value) {
-        return String(value).replace('.', ',');
-      }
+      var DISCONNECTED_TEXT = t('status.disconnected');
 
       function formatTestResults(tests) {
         return (tests || []).map(function (test) {
           var text;
           if (test.type === 'astrand') {
-            text = ' Åstrand-test' + (test.valid ? '' : ' (ikke gyldig)') + ':';
+            text = ' ' + t(test.valid ? 'result.astrand' : 'result.astrand.invalid');
             if (test.vo2max) {
-              text += ' kondital ' + danishNumber(test.vo2max) + ' ml/kg/min';
+              text += ' ' + t('result.vo2max', {value: I18N.number(test.vo2max)});
             }
-            if (test.pulse) text += ' (puls ' + test.pulse + ' ved ' + test.watts + ' W)';
+            if (test.pulse) text += ' ' + t('result.astrand.pulse', {pulse: test.pulse, watts: test.watts});
           } else {
-            text = ' Rampetest' + (test.valid ? '' : ' (ikke gyldig)') + ':';
+            text = ' ' + t(test.valid ? 'result.ramp' : 'result.ramp.invalid');
             if (test.map_watts) {
-              text += ' bedste minut ' + test.map_watts + ' W, FTP ' + test.ftp_watts + ' W';
+              text += ' ' + t('result.ramp.power', {map: test.map_watts, ftp: test.ftp_watts});
             }
-            if (test.max_pulse) text += ', max-puls ' + test.max_pulse;
-            if (test.vo2max) text += ', kondital ' + danishNumber(test.vo2max) + ' ml/kg/min';
+            if (test.max_pulse) text += ', ' + t('result.maxPulse', {pulse: test.max_pulse});
+            if (test.vo2max) text += ', ' + t('result.vo2max', {value: I18N.number(test.vo2max)});
           }
-          return text + (test.problems && test.problems.length ? '. ' + test.problems.join(' ') : '.');
+          return text + (test.problems && test.problems.length
+            ? '. ' + test.problems.map(I18N.problem).join(' ') : '.');
         }).join('');
       }
 
@@ -2441,9 +2440,9 @@
         }).then(function (data) {
           if (statusFailures >= 2 && status.textContent === DISCONNECTED_TEXT) {
             status.className = 'success';
-            status.textContent = 'Forbindelsen er genoprettet.';
+            status.textContent = t('status.reconnected');
             window.setTimeout(function () {
-              if (status.textContent === 'Forbindelsen er genoprettet.') {
+              if (status.textContent === t('status.reconnected')) {
                 status.className = '';
                 status.textContent = '';
               }
@@ -2457,10 +2456,10 @@
           canStop = data.can_stop === true;
           startButton.disabled = starting || stopping || (busy && !canStop);
           document.body.classList.toggle('workout-running', data.running);
-          startButton.textContent = starting ? 'Forbinder til uret …'
-            : stopping ? 'Stopper træning…'
-              : busy ? canStop ? 'Stop træning' : 'Stop kræver genstart'
-                : 'Start træning';
+          startButton.textContent = t(starting ? 'start.connecting'
+            : stopping ? 'start.stopping'
+              : busy ? canStop ? 'start.stop' : 'start.needsRestart'
+                : 'start.start');
           startButton.classList.toggle('danger', data.running && canStop);
           startButton.classList.toggle('primary', !data.running);
           document.querySelectorAll('input[name="pulse-source"]').forEach(function (radio) {
@@ -2470,6 +2469,7 @@
           watchDevice.disabled = busy;
           removeWatchButton.disabled = busy;
           deviceTypeSelect.disabled = busy;
+          languageSelect.disabled = busy;
           document.getElementById('device').disabled = busy;
           userProfile.disabled = busy;
           updatePulseLimitToggle();
@@ -2490,37 +2490,34 @@
           if (data.heart_rate) {
             if (data.heart_rate.fresh) {
               watchStatus.className = 'success';
-              watchStatus.textContent = 'Smartwatch tilsluttet · ' +
-                data.heart_rate.pulse + ' bpm';
+              watchStatus.textContent = t('watch.connected', {pulse: data.heart_rate.pulse});
             } else {
               watchStatus.className = 'error';
               watchStatus.textContent = data.heart_rate.error + (!busy ? ''
-                : workoutMode === 'power' ? '. Belastningen følger planen imens.'
-                  : '. Belastningen fastholdes, indtil pulsmålingen kommer tilbage.');
+                : '. ' + t(workoutMode === 'power' ? 'watch.lost.power' : 'watch.lost.pulse'));
             }
           }
           if (starting) {
             status.className = '';
-            status.textContent = 'Forbinder til uret. Hold pulsdelingen på uret slået til.';
+            status.textContent = t('status.connectingWatch');
           } else if (busy) {
             if (stopping) {
               status.className = '';
-              status.textContent = 'Træningen stoppes. Belastningen sættes ned til 25 W.';
+              status.textContent = t('status.stopping');
             } else if (!canStop) {
               status.className = 'muted';
-              status.textContent = 'Stop kræver den opdaterede server. Den aktive træning fortsætter uændret; genstart først, når træningen er afsluttet.';
+              status.textContent = t('status.needsRestart');
             } else if (data.heart_rate && !data.heart_rate.fresh && workoutMode === 'power') {
               status.className = 'muted';
-              status.textContent = 'Venter på puls fra uret. Belastningen følger planen.';
+              status.textContent = t('status.waitingWatchPower');
             } else if (data.heart_rate && !data.heart_rate.fresh) {
               status.className = 'error';
-              status.textContent = 'Fejl med Bluetooth-forbindelsen til uret. ' +
-                'Den aktuelle belastning fastholdes.';
+              status.textContent = t('status.watchError');
             } else {
               status.className = '';
-              status.textContent = 'Træningen kører. Loggen gemmes, når den er færdig.';
+              status.textContent = t('status.running');
             }
-          } else if (status.textContent === 'Forbinder til uret. Hold pulsdelingen på uret slået til.') {
+          } else if (status.textContent === t('status.connectingWatch')) {
             status.className = '';
             status.textContent = '';
           } else if (data.error) {
@@ -2528,12 +2525,11 @@
             status.textContent = data.error;
           } else if (data.exit_code === 0) {
             status.className = 'success';
-            status.textContent = 'Træningen er færdig.' + formatTestResults(data.tests) +
-              ' Logfil: data/' + data.log;
+            status.textContent = t('status.finished') + formatTestResults(data.tests) + ' ' +
+              t('status.logFile', {log: 'data/' + data.log});
           } else if (data.exit_code !== null) {
             status.className = 'error';
-            status.textContent = 'Træningen stoppede med fejlkode ' + data.exit_code +
-              '. Se pyergometer-terminalen for fejlbeskeden.';
+            status.textContent = t('status.failed', {code: data.exit_code});
           }
         }).catch(function () {
           statusFailures += 1;
@@ -2575,9 +2571,9 @@
         var templates = {
           'hiit-30-30': {
             mode: 'pulse',
-            message: 'HIIT-skabelonen er klar: 4 min opvarmning, 13 × 30/30 sek. og 3 min nedkøling.',
+            message: t('template.message.hiit-30-30'),
             blocks: [
-              {type: 'interval', label: 'Opvarmning', minutes: 4, percent: 55},
+              {type: 'interval', label: t('template.block.warmup'), minutes: 4, percent: 55},
               {
                 type: 'repeat',
                 count: 13,
@@ -2586,17 +2582,16 @@
                 recovery_seconds: 30,
                 recovery_percent: 60
               },
-              {type: 'break', label: 'Nedkøling', minutes: 3, power: 25}
+              {type: 'break', label: t('template.block.cooldown'), minutes: 3, power: 25}
             ]
           },
           'vo2max-5x5': {
             mode: 'power',
-            message: 'VO₂ Max-skabelonen er klar: 9 min opvarmning, 5 × (1 min ved 285 W + ' +
-              '1¼ min ved 130 W) og 8 min nedkøling. Tilpas watt til din form.',
+            message: t('template.message.vo2max-5x5'),
             blocks: [
-              {type: 'ramp', label: 'Opvarmning', minutes: 5.5, start_power: 100, end_power: 168},
-              {type: 'interval', label: 'Opvarmning, åbner', minutes: 1.5, power: 220},
-              {type: 'interval', label: 'Let inden intervallerne', minutes: 2, power: 125},
+              {type: 'ramp', label: t('template.block.warmup'), minutes: 5.5, start_power: 100, end_power: 168},
+              {type: 'interval', label: t('template.block.opener'), minutes: 1.5, power: 220},
+              {type: 'interval', label: t('template.block.easy'), minutes: 2, power: 125},
               {
                 type: 'repeat',
                 count: 5,
@@ -2605,19 +2600,17 @@
                 recovery_seconds: 75,
                 recovery_power: 130
               },
-              {type: 'ramp', label: 'Nedkøling', minutes: 8, start_power: 150, end_power: 105}
+              {type: 'ramp', label: t('template.block.cooldown'), minutes: 8, start_power: 150, end_power: 105}
             ]
           },
           'astrand': astrandTemplate(),
           'ramp-test': {
             mode: 'power',
             pulse_limit: false,
-            message: 'Rampetesten er klar: 5 min ved 50 W, derefter stiger belastningen 20 W ' +
-              'i minuttet. Kør til du ikke kan mere, og tryk så Stop. Pulsgrænsen er slået fra. ' +
-              'Tal med din læge først, hvis du ikke er vant til at presse dig helt.',
+            message: t('template.message.ramp-test'),
             blocks: [
-              {type: 'interval', label: 'Opvarmning', minutes: 5, power: 50},
-              {type: 'ramp', label: 'Rampe: kør til du ikke kan mere, og tryk så Stop',
+              {type: 'interval', label: t('template.block.warmup'), minutes: 5, power: 50},
+              {type: 'ramp', label: t('template.block.ramp'),
                minutes: 30, start_power: 50, end_power: 650, test: 'ramp'}
             ]
           }
@@ -2625,7 +2618,7 @@
         var selectedTemplate = templates[builtinTemplate.value];
         if (!selectedTemplate) {
           status.className = 'error';
-          status.textContent = 'Vælg først en fælles træningsskabelon.';
+          status.textContent = t('status.chooseTemplate');
           return;
         }
         blocks.textContent = '';
@@ -2642,7 +2635,7 @@
         builtinTemplate.value = '';
         showLoaded(templateName, before);
         status.className = 'success';
-        status.textContent = selectedTemplate.message + ' Du kan starte den uden at gemme.';
+        status.textContent = selectedTemplate.message + ' ' + t('status.templateLoaded');
         resetChart().catch(function (error) {
           status.className = 'error';
           status.textContent = error.message;
@@ -2686,10 +2679,10 @@
           })
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke gemme cyklens indstillinger');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.bikeSettings'));
           });
         }).then(function () {
-          flashSaved(document.getElementById('bike-saved'), 'Gemt');
+          flashSaved(document.getElementById('bike-saved'), t('saved.plain'));
         }).catch(function (error) {
           status.className = 'error';
           status.textContent = error.message;
@@ -2712,14 +2705,14 @@
       );
       document.getElementById('scan-watches').addEventListener('click', function () {
         watchStatus.className = 'muted';
-        watchStatus.textContent = 'Søger efter Bluetooth-enheder...';
+        watchStatus.textContent = t('watch.scanning');
         fetch('/api/heart-rate/scan', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({})
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke søge efter ure');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.scan'));
             return data.devices;
           });
         }).then(function (devices) {
@@ -2727,15 +2720,15 @@
           var placeholder = document.createElement('option');
           placeholder.value = '';
           placeholder.textContent = devices.length
-            ? 'Vælg smartwatch'
-            : 'Ingen Bluetooth-enheder fundet';
+            ? t('watch.select')
+            : t('watch.noneFound');
           watchDevice.appendChild(placeholder);
           devices.forEach(function (device) {
             var option = document.createElement('option');
             option.value = device.address;
             option.dataset.name = device.name;
             option.textContent = device.name +
-              (device.heart_rate_service ? ' · Bluetooth-puls' : '') +
+              (device.heart_rate_service ? ' · ' + t('watch.heartRateService') : '') +
               (device.rssi === null ? '' : ' · ' + device.rssi + ' dBm') +
               ' (' + device.address + ')';
             watchDevice.appendChild(option);
@@ -2748,16 +2741,14 @@
             var savedOption = document.createElement('option');
             savedOption.value = savedWatch.address;
             savedOption.dataset.name = savedWatch.name;
-            savedOption.textContent = savedWatch.name + ' · gemt (' + savedWatch.address + ')';
+            savedOption.textContent = t('watch.saved', {name: savedWatch.name, address: savedWatch.address});
             watchDevice.appendChild(savedOption);
           }
           if (savedWatch) watchDevice.value = savedWatch.address;
           watchStatus.className = devices.length ? 'muted' : 'error';
           watchStatus.textContent = devices.length
-            ? 'Vælg uret. Valget gemmes på profilen; næste gang forsøger appen at forbinde direkte.'
-            : savedWatch
-              ? 'Uret blev ikke fundet lige nu. Appen beholder den gemte enhed; kontrollér urets Bluetooth-pulsdeling.'
-              : 'Kontrollér, at urets Bluetooth-pulsdeling er slået til.';
+            ? t('watch.chooseFound')
+            : t(savedWatch ? 'watch.savedNotFound' : 'watch.checkSharing');
         }).catch(function (error) {
           watchStatus.className = 'error';
           watchStatus.textContent = error.message;
@@ -2769,25 +2760,25 @@
           if (stopping) return;
           stopping = true;
           startButton.disabled = true;
-          startButton.textContent = 'Stopper træning…';
+          startButton.textContent = t('start.stopping');
           status.className = '';
-          status.textContent = 'Sender stopkommando til ergometeret…';
+          status.textContent = t('status.sendingStop');
           fetch('/api/stop', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({})
           }).then(function (response) {
             return response.json().then(function (data) {
-              if (!response.ok) throw new Error(data.error || 'Kunne ikke stoppe træningen');
+              if (!response.ok) throw new Error(I18N.serverError(data, 'error.stop'));
               return data;
             });
           }).then(function () {
-            status.textContent = 'Stopkommando sendt. Belastningen sættes ned til 25 W.';
+            status.textContent = t('status.stopSent');
             refreshStatus();
           }).catch(function (error) {
             stopping = false;
             startButton.disabled = false;
-            startButton.textContent = 'Stop træning';
+            startButton.textContent = t('start.stop');
             status.className = 'error';
             status.textContent = error.message;
           });
@@ -2799,13 +2790,13 @@
         var plan = getPlan();
         if (plan.pulse_source === 'watch' && !plan.heart_rate_address) {
           status.className = 'error';
-          status.textContent = 'Søg efter og vælg dit smartwatch først.';
+          status.textContent = t('status.chooseWatch');
           return;
         }
         if (workoutMode === 'pulse' && !requireMaxPulse()) return;
         if (!plan.blocks.length) {
           status.className = 'error';
-          status.textContent = 'Tilføj mindst ét træningselement.';
+          status.textContent = t('status.noBlocks');
           return;
         }
         var inputs = blocks.querySelectorAll('input');
@@ -2817,15 +2808,15 @@
         }
         if (selectedDeviceType().needs_port && !plan.device.trim()) {
           status.className = 'error';
-          status.textContent = 'Angiv ergometerets serielle port.';
+          status.textContent = t('status.portMissing');
           return;
         }
         busy = true;
         startButton.disabled = true;
         if (plan.pulse_source === 'watch') {
           watchStatus.className = 'muted';
-          watchStatus.textContent = 'Forbinder til uret og venter på en pulsmåling...';
-          status.textContent = 'Forbinder til smartwatch. Hold Bluetooth-pulsdeling aktiv på uret.';
+          watchStatus.textContent = t('watch.connecting');
+          status.textContent = t('status.connectingSmartwatch');
         }
         fetch('/api/start', {
           method: 'POST',
@@ -2833,13 +2824,13 @@
           body: JSON.stringify(plan)
         }).then(function (response) {
           return response.json().then(function (data) {
-            if (!response.ok) throw new Error(data.error || 'Kunne ikke starte træningen');
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.start'));
             return data;
           });
         }).then(function () {
           status.className = '';
-          status.textContent = 'Træningen er startet.';
-          startButton.textContent = 'Stop træning';
+          status.textContent = t('status.started');
+          startButton.textContent = t('start.stop');
           startButton.classList.remove('primary');
           startButton.classList.add('danger');
           refreshStatus();
@@ -2847,7 +2838,7 @@
           busy = false;
           stopping = false;
           startButton.disabled = false;
-          startButton.textContent = 'Start træning';
+          startButton.textContent = t('start.start');
           startButton.classList.remove('danger');
           startButton.classList.add('primary');
           status.className = 'error';
@@ -2887,9 +2878,12 @@
         var needsPort = !document.getElementById('device-label').hidden;
         var device = document.getElementById('device').value.trim();
         profileHint.textContent = maxPulseResult.textContent +
-          ' · ' + (source && source.value === 'watch' ? 'Smartwatch' : 'Ergometer-puls');
+          ' · ' + t(source && source.value === 'watch' ? 'hint.watch' : 'hint.ergometer');
+        var languageSelect = document.getElementById('language');
         settingsHint.textContent = typeLabel +
-          (needsPort ? ' · ' + (device || 'ingen seriel port valgt') : '');
+          (needsPort ? ' · ' + (device || t('hint.noPort')) : '') +
+          (languageSelect.options.length
+            ? ' · ' + languageSelect.options[languageSelect.selectedIndex].textContent : '');
       }
 
       // Show the panels that still need input the first time the page has loaded its profile.
