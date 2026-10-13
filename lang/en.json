@@ -42,6 +42,8 @@
   "target.watts": "Target {value} W",
   "target.pause": "Break · {value} W",
   "target.recovery": "Sit still · pulse drop",
+  "cadence.value": "Cadence {rpm} rpm",
+  "cadence.none": "Cadence -- rpm",
 
   "limit.label": "Pulse limit",
   "limit.inactive": "Pulse limit: not active, because the user profile has no maximum pulse.",
@@ -107,6 +109,7 @@
   "legend.measured": "Measured pulse",
   "legend.progress": "Progress",
   "demo.button": "▶ Live demo",
+  "demo.stop": "■ Stop live demo",
 
   "choose.title": "Choose workout",
   "choose.saved": "My saved workouts",
@@ -259,6 +262,7 @@
   "status.noBlocks": "Add at least one workout element.",
   "status.demoEmpty": "Add at least one workout element before the live demo.",
   "status.demoStarted": "Live demo started. No ergometer is connected.",
+  "status.demoStopped": "The live demo has stopped.",
   "status.chooseTemplate": "Choose a shared workout template first.",
   "status.templateLoaded": "You can start it without saving.",
   "status.disconnected": "Lost the connection to the pyergometer server. Trying again …",

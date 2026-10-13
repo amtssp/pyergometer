@@ -370,6 +370,19 @@
       transition: background .3s ease, color .3s ease;
     }
     #pulse-target.flash { background: #d7f0dd; color: #14532d; }
+    .cadence {
+      margin: .3rem auto 0;
+      padding: .15rem .55rem;
+      width: fit-content;
+      border-radius: 8px;
+      background: #dcefee;
+      color: #0f5650;
+      text-align: center;
+      font-size: .85rem;
+      font-weight: 700;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
     @keyframes heartbeat {
       0%, 100% { transform: scale(1); }
       15% { transform: scale(1.06); }
@@ -464,6 +477,7 @@
           <div class="pulse-value" aria-hidden="true"><span id="pulse-now">--</span><small>bpm</small></div>
         </div>
         <div id="pulse-target" class="muted" data-i18n="pulse.none"></div>
+        <div id="cadence" class="cadence" hidden></div>
       </div>
     </div>
     <label id="pulse-limit-row" class="limit-toggle" hidden>
@@ -923,6 +937,7 @@
         var live = Boolean(data && data.active && points.length);
         var last = points.length ? points[points.length - 1] : null;
         pulseBadge.classList.toggle('live', live);
+        updateCadence(data);
         pulseBadge.classList.toggle('idle', !live);
         pulseNow.textContent = live ? last.pulse : '--';
         pulseBadge.setAttribute('aria-label', live
@@ -941,6 +956,16 @@
           return last.elapsed >= item.start && last.elapsed < item.end;
         })[0];
         pulseTarget.textContent = currentBlockTarget(block, last.elapsed, data.plan);
+      }
+
+      // Pedalling cadence under the heart, only while a workout or livedemo runs.
+      function updateCadence(data) {
+        var cadence = document.getElementById('cadence');
+        var running = Boolean(data && data.active && data.mode !== 'preview');
+        cadence.hidden = !running;
+        if (!running) return;
+        cadence.textContent = typeof data.rpm === 'number'
+          ? t('cadence.value', {rpm: data.rpm}) : t('cadence.none');
       }
 
       function makeField(labelText, type, value, min, max, step, className) {
@@ -1797,6 +1822,7 @@
             updateTestGuide(data);
             updateAdjustButtons();
             updateWorkoutName();
+            updateDemoButton();
           }
         }).catch(function (error) {
           chartMessage.textContent = error.message;
@@ -2379,9 +2405,34 @@
         });
       });
 
+      function demoRunning() {
+        return Boolean(latestChart && latestChart.mode === 'demo' && latestChart.active);
+      }
+
+      // The demo button stops a running livedemo; Start still begins a real workout.
+      function updateDemoButton() {
+        document.getElementById('start-demo').textContent =
+          t(demoRunning() ? 'demo.stop' : 'demo.button');
+      }
+
       document.getElementById('start-demo').addEventListener('click', function () {
         status.className = '';
         status.textContent = '';
+        if (demoRunning()) {
+          resetChart().then(function () {
+            updateDemoButton();
+            updatePulseBadge(latestChart);
+            updateTestGuide(latestChart);
+            updateAdjustButtons();
+            updateWorkoutName();
+            status.className = 'success';
+            status.textContent = t('status.demoStopped');
+          }).catch(function (error) {
+            status.className = 'error';
+            status.textContent = error.message;
+          });
+          return;
+        }
         var plan = getPlan();
         if (workoutMode === 'pulse' && !requireMaxPulse()) return;
         if (!plan.blocks.length) {

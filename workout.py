@@ -34,6 +34,9 @@ MIN_POWER = 25
 MAX_POWER = 1000
 # In watt-controlled workouts the load is reduced above this share of maximum pulse.
 PULSE_LIMIT_PERCENT = 95
+# The controller only logs a sample while the rider pedals, so a cadence older than
+# this many seconds means the rider has stopped.
+CADENCE_MAX_AGE = 3
 # Seconds a start waits for the first watch pulse: finding and connecting the
 # watch takes up to about 15 seconds on a Raspberry Pi.
 WATCH_START_TIMEOUT = 30
@@ -899,9 +902,12 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         self.chart_file_position = 0
         self.chart_points = []
         self.chart_limited = False
+        self.chart_rpm = None
+        self.chart_rpm_at = None
         self.demo_started_at = None
         self.demo_elapsed = 0
         self.demo_pulse = 82
+        self.demo_rpm = 0
         self.demo_block_index = 0
         self.demo_points = []
 
@@ -913,6 +919,7 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         self.demo_started_at = _utcnow()
         self.demo_elapsed = 0
         self.demo_pulse = 82
+        self.demo_rpm = 64
         self.demo_block_index = 0
         self.demo_points = [{'elapsed': 0, 'pulse': self.demo_pulse}]
 
@@ -978,6 +985,8 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
                 'elapsed': self.demo_elapsed,
                 'pulse': self.demo_pulse
                 })
+            self.demo_rpm = 0 if block['type'] == 'recovery' else int(round(
+                64 + 3 * math.sin(self.demo_elapsed / 7.0)))
 
     def allowed_origin_hosts(self):
         hosts = set(LOOPBACK_HOSTS)
@@ -1074,6 +1083,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             points = self.server.demo_points
             mode = 'demo'
             active = elapsed < self.server.chart_plan['duration']
+            rpm = self.server.demo_rpm if active else None
         elif self.server.chart_live_path:
             points = self.server.chart_points
             elapsed = 0
@@ -1089,6 +1099,9 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                     if line.strip():
                         sample = json.loads(line.decode('utf-8'))
                         self.server.chart_limited = sample.get('limited') is True
+                        if isinstance(sample.get('rpm'), (int, float)):
+                            self.server.chart_rpm = int(sample['rpm'])
+                            self.server.chart_rpm_at = _utcnow()
                         points.append({
                             'elapsed': int(sample['elapsed']),
                             'pulse': int(sample['pulse'])
@@ -1101,11 +1114,16 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 return
             mode = 'real'
             active = self.server.process is not None
+            rpm_at = self.server.chart_rpm_at
+            fresh = (rpm_at is not None and
+                     (_utcnow() - rpm_at).total_seconds() <= CADENCE_MAX_AGE)
+            rpm = self.server.chart_rpm if active and fresh else None
         else:
             points = []
             elapsed = 0
             mode = 'preview'
             active = False
+            rpm = None
 
         self._send_json(200, {
             'plan': self.server.chart_plan,
@@ -1113,6 +1131,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             'points': _sampled_points(points),
             'mode': mode,
             'active': active,
+            'rpm': rpm,
             'limited': mode == 'real' and active and self.server.chart_limited
             })
 
@@ -1600,6 +1619,8 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         self.server.stop_requested = False
         self.server.chart_plan = chart_plan
         self.server.chart_limited = False
+        self.server.chart_rpm = None
+        self.server.chart_rpm_at = None
         profile = request.get('profile')
         self.server.workout_profile = profile.strip() if isinstance(profile, text_types) else None
         self.server.workout_started = datetime.datetime.now().replace(microsecond=0).isoformat()

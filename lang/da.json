@@ -42,6 +42,8 @@
   "target.watts": "Mål {value} W",
   "target.pause": "Pause · {value} W",
   "target.recovery": "Sid stille · pulsfald",
+  "cadence.value": "Kadence {rpm} rpm",
+  "cadence.none": "Kadence -- rpm",
 
   "limit.label": "Pulsgrænse",
   "limit.inactive": "Pulsgrænse: ikke aktiv, fordi brugerprofilen ikke har en max-puls.",
@@ -107,6 +109,7 @@
   "legend.measured": "Målt puls",
   "legend.progress": "Forløb",
   "demo.button": "▶ Livedemo",
+  "demo.stop": "■ Stop livedemo",
 
   "choose.title": "Vælg træning",
   "choose.saved": "Mine gemte træninger",
@@ -259,6 +262,7 @@
   "status.noBlocks": "Tilføj mindst ét træningselement.",
   "status.demoEmpty": "Tilføj mindst ét træningselement før livedemo.",
   "status.demoStarted": "Livedemo startet. Ingen ergometer tilsluttes.",
+  "status.demoStopped": "Livedemoen er stoppet.",
   "status.chooseTemplate": "Vælg først en fælles træningsskabelon.",
   "status.templateLoaded": "Du kan starte den uden at gemme.",
   "status.disconnected": "Mistede forbindelsen til pyergometer-serveren. Prøver igen …",

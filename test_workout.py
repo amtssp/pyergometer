@@ -988,6 +988,61 @@ class DemoLiveUpdateTests(unittest.TestCase):
         self.assertEqual(current[0]['type'], 'recovery')
 
 
+class CadenceTests(unittest.TestCase):
+    def setUp(self):
+        self.server = WorkoutServer(('127.0.0.1', 0), simulate=True)
+        thread = threading.Thread(target=self.server.serve_forever)
+        thread.daemon = True
+        thread.start()
+
+        def stop():
+            self.server.shutdown()
+            thread.join()
+            self.server.server_close()
+        self.addCleanup(stop)
+
+    def chart(self):
+        connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+        connection.request('GET', '/api/chart')
+        chart = json.loads(connection.getresponse().read().decode('utf-8'))
+        connection.close()
+        return chart
+
+    def test_nothing_to_show_without_a_workout(self):
+        self.assertIsNone(self.chart()['rpm'])
+
+    def test_a_demo_pedals_but_sits_still_during_a_pulse_drop(self):
+        self.server.start_demo({'max_pulse': 180, 'blocks': [
+            {'type': 'interval', 'minutes': 1, 'percent': 70}, {'type': 'recovery'}]})
+        self.server.demo_started_at -= datetime.timedelta(seconds=30)
+        self.assertTrue(55 <= self.chart()['rpm'] <= 75)
+
+        self.server.demo_started_at -= datetime.timedelta(seconds=40)
+        self.assertEqual(self.chart()['rpm'], 0)
+
+    def test_a_workout_shows_the_latest_cadence_until_the_rider_stops(self):
+        class Running(object):
+            def poll(self):
+                return None
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory)
+        live_path = os.path.join(directory, 'live.jsonl')
+        with open(live_path, 'w') as live_file:
+            for second, rpm in ((1, 58), (2, 61)):
+                live_file.write(json.dumps({'elapsed': second, 'pulse': 120, 'rpm': rpm}) + '\n')
+        self.server.chart_plan = build_chart_plan(
+            {'max_pulse': 180, 'blocks': [{'type': 'interval', 'minutes': 5, 'percent': 70}]})
+        self.server.chart_live_path = live_path
+        self.server.process = Running()
+        self.addCleanup(setattr, self.server, 'process', None)
+
+        self.assertEqual(self.chart()['rpm'], 61)
+
+        # No new samples: the rider has stopped pedalling.
+        self.server.chart_rpm_at -= datetime.timedelta(seconds=10)
+        self.assertIsNone(self.chart()['rpm'])
+
+
 class NetworkOriginTests(unittest.TestCase):
     def start_server(self, host):
         server = WorkoutServer((host, 0))
