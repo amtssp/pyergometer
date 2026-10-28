@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 
 from workout import (
     WorkoutServer,
@@ -1348,6 +1349,57 @@ class WattWorkoutTests(unittest.TestCase):
         controller.control_step(0)
 
         self.assertEqual(controller.device.loads, [200])
+
+    def pulse_controller(self, pulse, target):
+        class Device(object):
+            rpm = 60
+            power = 100
+
+            def __init__(self):
+                self.pulse = pulse
+                self.changes = []
+
+            def status(self):
+                pass
+
+            def set_power(self, absolute=0.0, relative=0.0):
+                self.changes.append(relative)
+
+        class Session(object):
+            def step(self, second):
+                return {'time': second, 'power': 0, 'pulse': target}
+
+        return Ergometer(device=Device(), session=Session())
+
+    def test_pulse_control_raises_the_load_faster_far_from_target(self):
+        changes = []
+        for pulse in (90, 125, 133, 137):
+            controller = self.pulse_controller(pulse=pulse, target=140)
+            controller.control_step(0)
+            changes.extend(controller.device.changes)
+        # 50, 15, 7 and 3 beats below the target.
+        self.assertEqual(changes, [1.0, 0.5, 0.15, 0.03])
+
+    def test_watch_pulse_replaces_the_bike_pulse_while_the_watch_connects(self):
+        directory = tempfile.mkdtemp(prefix='pyergometer-watch-test-')
+        self.addCleanup(shutil.rmtree, directory)
+        path = os.path.join(directory, 'heart-rate.json')
+        with open(path, 'w') as sample_file:
+            json.dump({'pulse': None, 'timestamp': None, 'connected': False}, sample_file)
+        controller = self.make_controller(pulse=59)
+        controller.heart_rate_file = path
+
+        self.assertFalse(controller.refresh_heart_rate())
+        self.assertEqual(controller.device.pulse, 0)
+
+        with open(path, 'w') as sample_file:
+            json.dump({'pulse': 95, 'timestamp': time.time(), 'connected': True}, sample_file)
+        self.assertTrue(controller.refresh_heart_rate())
+        controller.device.pulse = 59
+        with open(path, 'w') as sample_file:
+            json.dump({'pulse': 95, 'timestamp': time.time() - 10, 'connected': False}, sample_file)
+        self.assertFalse(controller.refresh_heart_rate())
+        self.assertEqual(controller.device.pulse, 95)
 
     def test_pulse_limit_lowers_and_restores_the_load(self):
         controller = self.make_controller(pulse=180, pulse_limit=171)

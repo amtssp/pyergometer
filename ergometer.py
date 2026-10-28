@@ -14,6 +14,10 @@ LIMIT_REDUCTION_STEP = 10
 LIMIT_RECOVERY_STEP = 5
 LIMIT_HYSTERESIS = 5
 
+# Pulse control: watts changed per second for a pulse this many beats from target.
+# Far from target the load moves fast; close to it slowly, as the pulse lags behind.
+PULSE_CONTROL_STEPS = ((20, 1.0), (10, 0.5), (5, 0.15), (0, 0.03))
+
 
 class Ergometer:
     def __init__(self, device=None, session=None, log=None, live_log=None,
@@ -83,6 +87,9 @@ class Ergometer:
         if not self.heart_rate_file:
             self.heart_rate_fresh = True
             return True
+        # With a watch, the bike's own pulse reading is never used: without a chest
+        # strap it reports a made-up value (59 bpm).
+        self.device.pulse = self.last_watch_pulse if self.last_watch_pulse is not None else 0
         if os.path.exists(self.heart_rate_file) and os.path.getsize(self.heart_rate_file) == 0:
             # The watch has not delivered its first pulse yet (a watt workout starts without it).
             self.heart_rate_fresh = False
@@ -92,6 +99,10 @@ class Ergometer:
             pulse = sample['pulse']
             timestamp = sample['timestamp']
             connected = sample['connected']
+            if connected is False and pulse is None:
+                # The watch is still connecting and has not measured a pulse yet.
+                self.heart_rate_fresh = False
+                return False
             if (isinstance(pulse, bool) or not isinstance(pulse, int) or
                     pulse < 20 or pulse > 250 or
                     isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)) or
@@ -106,8 +117,6 @@ class Ergometer:
         if self.heart_rate_fresh:
             self.last_watch_pulse = pulse
             self.device.pulse = pulse
-        elif self.last_watch_pulse is not None:
-            self.device.pulse = self.last_watch_pulse
         return self.heart_rate_fresh
 
     def control_step(self, elapsed):
@@ -163,14 +172,11 @@ class Ergometer:
                 return
 
             absolute_difference = abs(difference)
-            if absolute_difference > 10.0:
-                relative_change = 0.30
-            elif absolute_difference > 5.0:
-                relative_change = 0.15
-            elif absolute_difference > 0.0:
-                relative_change = 0.03
-            else:
-                relative_change = 0.0
+            relative_change = 0.0
+            for beats, change in PULSE_CONTROL_STEPS:
+                if absolute_difference > beats:
+                    relative_change = change
+                    break
 
             self.device.set_power(
                 relative=relative_change if difference > 0 else -relative_change)
