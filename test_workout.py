@@ -42,7 +42,7 @@ from workout import (
     builtin_template_names,
     read_languages
 )
-from liveplan import session_steps
+from liveplan import session_steps, skip_to_recovery
 from bleheartrate import (
     HeartRateMonitor,
     _HeartRateWorker,
@@ -519,6 +519,134 @@ class LivePlanTests(unittest.TestCase):
         self.assertEqual(steps[119], {'time': 119, 'power': 0, 'pulse': 135, 'recovery': False})
         self.assertEqual(steps[120], {'time': 120, 'power': 60, 'pulse': 0, 'recovery': False})
         self.assertEqual(steps[-1], {'time': 179, 'power': 60, 'pulse': 0, 'recovery': False})
+
+    def ramp_test_plan(self):
+        return build_chart_plan({'mode': 'power', 'blocks': [
+            {'type': 'interval', 'minutes': 5, 'power': 50},
+            {'type': 'ramp', 'minutes': 30, 'start_power': 50, 'end_power': 650, 'test': 'ramp'},
+            {'type': 'recovery', 'seconds': 60}]})
+
+    def test_stop_moves_the_pulse_drop_forward(self):
+        plan = self.ramp_test_plan()
+
+        skipped = skip_to_recovery(plan, 900)
+
+        self.assertEqual([(b['type'], b['start'], b['end']) for b in skipped['blocks']],
+                         [('power', 0, 300), ('ramp', 300, 900), ('recovery', 900, 960)])
+        # The ramp keeps its slope of 20 W per minute; it only stops early.
+        self.assertEqual((skipped['blocks'][1]['start_value'], skipped['blocks'][1]['end_value']),
+                         (50, 250))
+        self.assertEqual(skipped['duration'], 960)
+        steps = session_steps(skipped)
+        self.assertEqual((steps[899]['power'], steps[899]['test']), (250, 'ramp'))
+        self.assertTrue(steps[900]['recovery'])
+        # During the pulse drop, or without one, Stop really stops.
+        self.assertIsNone(skip_to_recovery(skipped, 930))
+        self.assertIsNone(skip_to_recovery(build_chart_plan({'mode': 'power', 'blocks': [
+            {'type': 'interval', 'minutes': 5, 'power': 50}]}), 60))
+
+    def test_controller_jumps_to_the_pulse_drop(self):
+        plan = self.ramp_test_plan()
+        directory = tempfile.mkdtemp(prefix='pyergometer-skip-test-')
+        self.addCleanup(shutil.rmtree, directory)
+        session_path = os.path.join(directory, 'session.xml')
+        with open(session_path, 'wb') as session_file:
+            session_file.write(build_session_xml({'mode': 'power', 'blocks': [
+                {'type': 'interval', 'minutes': 5, 'power': 50}]}))
+        live_path = os.path.join(directory, 'live.jsonl')
+        control_path = os.path.join(directory, 'control.jsonl')
+        with open(control_path, 'w') as control_file:
+            control_file.write(json.dumps(plan) + '\n')
+
+        class Device(object):
+            rpm = 80
+            pulse = 170
+            power = 0
+
+            def status(self):
+                pass
+
+            def set_power(self, absolute=0.0, relative=0.0):
+                self.power = absolute
+
+        controller = Ergometer(device=Device(), session=Session(session_path),
+                               live_log=live_path, live_control=control_path)
+        controller.poll_live_updates()
+        controller.begin_monotonic = time.monotonic() - 900
+        controller.begin = datetime.datetime.utcnow()
+        with open(control_path, 'a') as control_file:
+            control_file.write('{"skip_to_recovery":true}\n')
+        controller.poll_live_updates()
+        controller.control_step(900)
+
+        self.assertFalse(controller.stop_requested)
+        self.assertTrue(controller.session.step(900)['recovery'])
+        self.assertEqual(controller.session.duration, 960)
+        controller.live_log_file.close()
+        with open(live_path) as live_file:
+            sample = json.loads(live_file.readline())
+        self.assertEqual((sample['recovery'], sample['skipped_to_recovery']), (True, 900))
+
+        # A second Stop during the pulse drop ends the workout.
+        with open(control_path, 'a') as control_file:
+            control_file.write('{"skip_to_recovery":true}\n')
+        controller.poll_live_updates()
+        self.assertTrue(controller.stop_requested)
+
+    def test_ramp_test_jumps_to_the_pulse_drop_when_the_rider_stops_pedalling(self):
+        plan = self.ramp_test_plan()
+
+        class Device(object):
+            rpm = 10
+            pulse = 175
+            power = 0
+
+            def status(self):
+                pass
+
+            def set_power(self, absolute=0.0, relative=0.0):
+                self.power = absolute
+
+        class LiveSession(object):
+            def __init__(self):
+                self.update_live_plan(plan)
+
+            def step(self, second):
+                return self.steps[min(second, len(self.steps) - 1)]
+
+            def update_live_plan(self, new_plan):
+                self.steps = session_steps(new_plan)
+                self.duration = len(self.steps)
+
+        controller = Ergometer(device=Device(), session=LiveSession())
+        controller.live_plan = plan
+        for second in range(600, 604):
+            controller.control_step(second)
+        self.assertFalse(controller.session.step(605)['recovery'])
+        controller.control_step(604)
+        self.assertTrue(controller.session.step(604)['recovery'])
+        self.assertEqual(controller.session.duration, 664)
+        # Outside a ramp test a short stop does not end the intervals.
+        warmup = Ergometer(device=Device(), session=LiveSession())
+        warmup.live_plan = plan
+        for second in range(10, 30):
+            warmup.control_step(second)
+        self.assertFalse(warmup.session.step(30)['recovery'])
+
+    def test_server_moves_its_chart_like_the_controller(self):
+        server = WorkoutServer(('127.0.0.1', 0), simulate=True)
+        self.addCleanup(server.server_close)
+        server.chart_plan = self.ramp_test_plan()
+        server.chart_points = [{'elapsed': 899, 'pulse': 170}]
+
+        self.assertTrue(server.stop_jumps_to_recovery())
+        server.apply_skip(900)
+        server.apply_skip(900)
+
+        self.assertEqual(server.chart_skips, [900])
+        self.assertEqual(server.chart_plan['duration'], 960)
+        server.chart_points = [{'elapsed': 930, 'pulse': 150}]
+        self.assertFalse(server.stop_jumps_to_recovery())
 
     def test_rejects_gaps_or_duration_mismatch_in_live_plan(self):
         with self.assertRaises(ValueError):

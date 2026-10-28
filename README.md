@@ -174,7 +174,14 @@ it leaves out its last easy interval.
 * ``Test · Maksimal rampe``: 5 minutes at 50 W, then 20 W more per minute until
   the rider stops. Reports the best whole minute (MAP), FTP as 75 % of it, the
   highest pulse and VO2max estimated as 10.8 x W/kg + 7. The pulse limit is
-  switched off; only ride it if you are used to maximal efforts.
+  switched off; only ride it if you are used to maximal efforts. It ends with
+  a 60-second pulse drop, which starts when Stop is pressed or when the cadence
+  stays under 15 rpm for 5 seconds.
+
+In every workout with a pulse drop still to come, Stop (shown as
+"Stop → pulsfald") jumps straight to it: the running block ends, the blocks
+before the pulse drop are left out and the workout ends after it. Pressing Stop
+during the pulse drop ends the workout at once.
 
 Following progress
 ------------------

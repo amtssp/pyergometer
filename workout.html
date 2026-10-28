@@ -2727,7 +2727,8 @@
           document.body.classList.toggle('workout-running', data.running);
           startButton.textContent = t(starting ? 'start.connecting'
             : stopping ? 'start.stopping'
-              : busy ? canStop ? 'start.stop' : 'start.needsRestart'
+              : busy ? canStop ? (stopGoesToRecovery() ? 'start.stopToRecovery' : 'start.stop')
+                : 'start.needsRestart'
                 : 'start.start');
           startButton.classList.toggle('danger', data.running && canStop);
           startButton.classList.toggle('primary', !data.running);
@@ -2908,7 +2909,8 @@
             blocks: [
               {type: 'interval', label: t('template.block.warmup'), minutes: 5, power: 50},
               {type: 'ramp', label: t('template.block.ramp'),
-               minutes: 30, start_power: 50, end_power: 650, test: 'ramp'}
+               minutes: 30, start_power: 50, end_power: 650, test: 'ramp'},
+              {type: 'recovery', seconds: 60}
             ]
           }
         };
@@ -3052,6 +3054,20 @@
         });
       });
 
+      // Stop with a pulse drop still to come jumps to it (as the server decides).
+      function stopGoesToRecovery() {
+        var chart = latestChart;
+        if (!chart || !chart.plan || chart.mode !== 'real') return false;
+        var now = chart.elapsed;
+        var blocks = chart.plan.blocks;
+        var inside = blocks.some(function (block) {
+          return block.type === 'recovery' && block.start <= now && now < block.end;
+        });
+        return !inside && blocks.some(function (block) {
+          return block.type === 'recovery' && block.start > now;
+        });
+      }
+
       startButton.addEventListener('click', function () {
         if (busy) {
           if (stopping) return;
@@ -3069,8 +3085,16 @@
               if (!response.ok) throw new Error(I18N.serverError(data, 'error.stop'));
               return data;
             });
-          }).then(function () {
-            status.textContent = t('status.stopSent');
+          }).then(function (data) {
+            if (data.skipping) {
+              // The workout goes on with its pulse drop; the next press stops it.
+              stopping = false;
+              startButton.disabled = false;
+              startButton.textContent = t('start.stop');
+              status.textContent = t('status.skippingToRecovery');
+            } else {
+              status.textContent = t('status.stopSent');
+            }
             refreshStatus();
           }).catch(function (error) {
             stopping = false;

@@ -6,6 +6,7 @@ import tempfile
 import time
 
 from bleheartrate import read_shared_json
+from liveplan import skip_to_recovery
 
 
 # Above the pulse limit a watt step is lowered by this much per second, and raised
@@ -13,6 +14,11 @@ from bleheartrate import read_shared_json
 LIMIT_REDUCTION_STEP = 10
 LIMIT_RECOVERY_STEP = 5
 LIMIT_HYSTERESIS = 5
+
+# In a ramp test, a cadence this low for this many seconds means the rider cannot go
+# on, so the workout moves on to its pulse drop as if Stop had been pressed.
+EXHAUSTED_RPM = 15
+EXHAUSTED_SECONDS = 5
 
 # Pulse control: watts changed per second for a pulse this many beats from target.
 # Far from target the load moves fast; close to it slowly, as the pulse lags behind.
@@ -34,6 +40,10 @@ class Ergometer:
         self.last_watch_pulse = None
         self.heart_rate_fresh = not heart_rate_file
         self.stop_requested = False
+        # The chart plan from the workout page, which a jump to the pulse drop changes.
+        self.live_plan = None
+        self.skipped_at = None
+        self.low_cadence_seconds = 0
 
         if log:
             self.logtemp = tempfile.NamedTemporaryFile(mode='w', delete=False)
@@ -126,6 +136,13 @@ class Ergometer:
 
         step = self.session.step(elapsed)
         recovery = step.get('recovery', False)
+        if not recovery and step.get('test') == 'ramp' and self.device.rpm < EXHAUSTED_RPM:
+            self.low_cadence_seconds += 1
+            if self.low_cadence_seconds >= EXHAUSTED_SECONDS and self.jump_to_recovery(elapsed):
+                step = self.session.step(elapsed)
+                recovery = step.get('recovery', False)
+        else:
+            self.low_cadence_seconds = 0
         # During a pulse-drop measurement the rider sits still, so pedalling is not required.
         if not recovery and (self.device.rpm < 20 or (step['pulse'] > 0 and self.device.pulse < 20)):
             sys.stderr.write('.')
@@ -152,6 +169,10 @@ class Ergometer:
                 'limited': self.limit_reduction > 0,
                 'recovery': recovery
             }
+            if self.skipped_at is not None:
+                # Tells the workout page to move its pulse drop forward the same way.
+                sample['skipped_to_recovery'] = self.skipped_at
+                self.skipped_at = None
             self.live_log_file.write(json.dumps(sample) + '\n')
             self.live_log_file.flush()
 
@@ -180,6 +201,17 @@ class Ergometer:
 
             self.device.set_power(
                 relative=relative_change if difference > 0 else -relative_change)
+
+    def jump_to_recovery(self, elapsed):
+        plan = skip_to_recovery(self.live_plan, elapsed) if self.live_plan else None
+        if plan is None:
+            return False
+        self.session.update_live_plan(plan)
+        self.live_plan = plan
+        self.skipped_at = elapsed
+        self.low_cadence_seconds = 0
+        sys.stderr.write('\nJumping to the pulse drop at %d s\n' % elapsed)
+        return True
 
     def limited_power(self, power):
         """Lower a fixed load while the pulse is above the limit, then restore it gradually."""
@@ -217,8 +249,14 @@ class Ergometer:
                 plan = json.loads(line)
                 if isinstance(plan, dict) and plan.get('stop') is True:
                     self.stop_requested = True
+                elif isinstance(plan, dict) and plan.get('skip_to_recovery') is True:
+                    # Stop with a pulse drop still to come jumps to it; otherwise it stops.
+                    if not hasattr(self, 'begin') or not self.jump_to_recovery(
+                            int(time.monotonic() - self.begin_monotonic)):
+                        self.stop_requested = True
                 else:
                     self.session.update_live_plan(plan)
+                    self.live_plan = plan
             except (ValueError, TypeError, KeyError) as error:
                 sys.stderr.write('\nCould not apply live workout update: %s\n' % error)
             if self.stop_requested:

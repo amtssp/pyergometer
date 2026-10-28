@@ -17,6 +17,45 @@ def ramp_value(start, end, duration, second):
     return int(math.floor(start + (end - start) * float(second) / duration + 0.5))
 
 
+def skip_to_recovery(plan, elapsed):
+    """The chart plan with the pulse drop moved forward to start at ``elapsed``.
+
+    The block running at ``elapsed`` ends there, the blocks before the next pulse
+    drop are left out and the rest moves forward. Returns None when no pulse drop
+    follows, or when one is already running.
+    """
+    blocks = plan['blocks']
+    if any(block['type'] == 'recovery' and block['start'] <= elapsed < block['end']
+           for block in blocks):
+        return None
+    target = next((index for index, block in enumerate(blocks)
+                   if block['type'] == 'recovery' and block['start'] > elapsed), None)
+    if target is None:
+        return None
+    shift = blocks[target]['start'] - elapsed
+    kept = []
+    for index, block in enumerate(blocks):
+        block = dict(block)
+        if block['end'] <= elapsed:
+            kept.append(block)
+        elif index < target and block['start'] < elapsed:
+            if block['type'] == 'ramp':
+                # Keep the ramp's slope; it only stops early.
+                block['end_value'] = ramp_value(block['start_value'], block['end_value'],
+                                                block['end'] - block['start'],
+                                                elapsed - block['start'])
+            block['end'] = elapsed
+            kept.append(block)
+        elif index >= target:
+            block['start'] -= shift
+            block['end'] -= shift
+            kept.append(block)
+    result = dict(plan)
+    result['blocks'] = kept
+    result['duration'] = plan['duration'] - shift
+    return result
+
+
 def session_steps(plan):
     """Expand a chart plan into one {'time', 'power', 'pulse'} step per second.
 
@@ -73,9 +112,13 @@ def session_steps(plan):
             raise ValueError('Live workout block %d has an invalid type' % (index + 1))
 
         recovery = block_type == 'recovery'
+        test = block.get('test')
         for offset, (power, pulse) in enumerate(values):
-            steps.append({'time': start + offset, 'power': power, 'pulse': pulse,
-                          'recovery': recovery})
+            step = {'time': start + offset, 'power': power, 'pulse': pulse,
+                    'recovery': recovery}
+            if test:
+                step['test'] = test
+            steps.append(step)
         elapsed = end
 
     if elapsed != duration:

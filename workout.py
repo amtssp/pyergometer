@@ -12,7 +12,7 @@ import threading
 import webbrowser
 import xml.etree.ElementTree as ET
 from bleheartrate import HeartRateMonitor, scan_heart_rate_devices
-from liveplan import RECOVERY_POWER, ramp_value, session_steps
+from liveplan import skip_to_recovery, RECOVERY_POWER, ramp_value, session_steps
 from devices import DEFAULT_DEVICE_TYPE, device_type, device_type_ids, public_device_types
 try:
     from urllib.parse import parse_qs, urlparse
@@ -986,6 +986,9 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         self.chart_limited = False
         self.chart_rpm = None
         self.chart_rpm_at = None
+        # Seconds at which the running workout jumped to its pulse drop, in order.
+        self.chart_skips = []
+        self.skip_requested = False
         self.demo_started_at = None
         self.demo_elapsed = 0
         self.demo_pulse = 82
@@ -1015,6 +1018,21 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         self.demo_started_at = None
         self.demo_elapsed = 0
         self.demo_points = []
+
+    def apply_skip(self, elapsed):
+        """Move the chart's pulse drop forward as the controller did at ``elapsed``."""
+        self.skip_requested = False
+        if elapsed in self.chart_skips or not self.chart_plan:
+            return
+        self.chart_skips.append(elapsed)
+        self.chart_plan = skip_to_recovery(self.chart_plan, elapsed) or self.chart_plan
+
+    def stop_jumps_to_recovery(self):
+        """Whether Stop now moves on to a pulse drop instead of ending the workout."""
+        if not self.chart_plan:
+            return False
+        elapsed = self.chart_points[-1]['elapsed'] if self.chart_points else 0
+        return skip_to_recovery(self.chart_plan, elapsed) is not None
 
     def demo_running(self):
         if self.demo_started_at is None or self.chart_plan is None:
@@ -1092,6 +1110,9 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
                         samples.append(json.loads(line))
             if not samples:
                 return
+            for sample in samples:
+                if isinstance(sample.get('skipped_to_recovery'), int):
+                    self.apply_skip(sample['skipped_to_recovery'])
             session = {
                 'profile': self.workout_profile,
                 'started': self.workout_started,
@@ -1181,6 +1202,8 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                     if line.strip():
                         sample = json.loads(line.decode('utf-8'))
                         self.server.chart_limited = sample.get('limited') is True
+                        if isinstance(sample.get('skipped_to_recovery'), int):
+                            self.server.apply_skip(sample['skipped_to_recovery'])
                         if isinstance(sample.get('rpm'), (int, float)):
                             self.server.chart_rpm = int(sample['rpm'])
                             self.server.chart_rpm_at = _utcnow()
@@ -1373,15 +1396,25 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             if self.server.stop_requested:
                 self._send_json(200, {'stopping': True})
                 return
+            if self.server.skip_requested:
+                self._send_json(200, {'skipping': True})
+                return
             if not self.server.chart_control_path:
                 self._send_json(500, {'error': 'Live workout control is not available'})
                 return
+            # With a pulse drop still to come, Stop jumps to it; the next Stop ends.
+            skip = self.server.stop_jumps_to_recovery()
             try:
                 with open(self.server.chart_control_path, 'ab') as control_file:
-                    control_file.write(b'{"stop":true}\n')
+                    control_file.write(b'{"skip_to_recovery":true}\n' if skip
+                                       else b'{"stop":true}\n')
                     control_file.flush()
             except (IOError, OSError) as error:
                 self._send_json(500, {'error': 'Could not stop workout: %s' % error})
+                return
+            if skip:
+                self.server.skip_requested = True
+                self._send_json(200, {'skipping': True})
                 return
             self.server.stop_requested = True
             self._send_json(200, {'stopping': True})
@@ -1526,6 +1559,9 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {'error': 'Live workout control is not available'})
                 return
             chart_plan = build_chart_plan(request)
+            # The page's plan does not know about jumps to the pulse drop, so make them again.
+            for elapsed in self.server.chart_skips:
+                chart_plan = skip_to_recovery(chart_plan, elapsed) or chart_plan
             try:
                 update = json.dumps(chart_plan)
                 if not isinstance(update, bytes):
@@ -1626,6 +1662,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         if selected_type['needs_port']:
             command.extend(['--device', device.strip()])
 
+        chart_plan = build_chart_plan(request)
         try:
             with open(live_log_path, 'wb'):
                 pass
@@ -1634,8 +1671,9 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             self._send_json(500, {'error': 'Could not create live pulse log: %s' % error})
             return
         try:
-            with open(live_control_path, 'wb'):
-                pass
+            # The controller starts from the chart plan, which knows where a test runs.
+            with open(live_control_path, 'wb') as control_file:
+                control_file.write(json.dumps(chart_plan).encode('utf-8') + b'\n')
         except IOError as error:
             os.remove(temporary.name)
             os.remove(live_log_path)
@@ -1644,7 +1682,6 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         command.extend(['--live-log', live_log_path])
         command.extend(['--live-control', live_control_path])
         command.append('--local-only')
-        chart_plan = build_chart_plan(request)
         # The page sends pulse_limit false when the limit is switched off for this workout.
         limit = pulse_limit(chart_plan, request.get('pulse_limit') is not False)
         if limit:
@@ -1727,6 +1764,8 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         self.server.chart_limited = False
         self.server.chart_rpm = None
         self.server.chart_rpm_at = None
+        self.server.chart_skips = []
+        self.server.skip_requested = False
         profile = request.get('profile')
         self.server.workout_profile = profile.strip() if isinstance(profile, text_types) else None
         self.server.workout_started = datetime.datetime.now().replace(microsecond=0).isoformat()
