@@ -80,6 +80,7 @@
     .muted { color: var(--muted); }
     #message { min-height: 1.4em; margin: 0 0 .75rem; font-weight: 600; }
     .error { color: var(--bad-text); }
+    .success { color: var(--good-text); }
 
     /* Stat tiles */
     .tiles {
@@ -129,6 +130,23 @@
     .badge.ok { background: #e3f4e6; color: var(--good-text); }
     .badge.no { background: #fdeceb; color: var(--bad-text); }
     .problems { margin-top: .2rem; color: var(--muted); font-size: .82rem; }
+    th.select, td.select { width: 2.2rem; padding-right: 0; }
+    td.select input, th.select input { width: 1.15rem; height: 1.15rem; margin: 0; cursor: pointer; }
+    /* Actions for the marked workouts stay in view while the tables scroll. */
+    .selection-bar {
+      position: sticky; bottom: .75rem; z-index: 10; display: flex; flex-wrap: wrap;
+      align-items: center; gap: .6rem 1rem; margin-top: 1rem; padding: .75rem 1rem;
+      background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(16, 32, 48, .18); font-weight: 600;
+    }
+    .selection-bar[hidden], .selection-bar [hidden] { display: none; }
+    .selection-bar button {
+      font: inherit; font-weight: 600; min-height: 2.6rem; padding: .45rem 1rem; cursor: pointer;
+      color: var(--accent); background: #fff; border: 1px solid var(--line); border-radius: 999px;
+    }
+    .selection-bar button.danger { color: #fff; background: var(--bad-text); border-color: var(--bad-text); }
+    .selection-bar button.plain { border-color: transparent; color: var(--muted); }
+    .selection-bar button:disabled { opacity: .55; cursor: default; }
     .range-row { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 .75rem; }
     .range-row button {
       font: inherit; font-weight: 600; min-height: 2.4rem; padding: .4rem 1rem; cursor: pointer;
@@ -214,6 +232,17 @@
     <div class="table-wrap"><table id="sessions-table"></table></div>
     <button id="show-all-sessions" class="nav-link" type="button" hidden style="margin-top:.75rem;cursor:pointer"></button>
   </section>
+
+  <div id="selection-bar" class="selection-bar" role="region" hidden
+       data-i18n-attr="aria-label:development.selection.aria">
+    <span id="selection-count"></span>
+    <label id="move-row" for="move-target"><span data-i18n="development.selection.moveTo"></span>
+      <select id="move-target"></select>
+    </label>
+    <button id="move-selected" type="button" data-i18n="development.selection.move"></button>
+    <button id="delete-selected" class="danger" type="button" data-i18n="development.selection.delete"></button>
+    <button id="clear-selection" class="plain" type="button" data-i18n="development.selection.clear"></button>
+  </div>
 
   <script>
     (function () {
@@ -531,7 +560,11 @@
       function table(target, headers, rows) {
         target.textContent = '';
         var head = el('thead'), headRow = el('tr');
-        headers.forEach(function (h) { headRow.appendChild(el('th', h.num ? 'num' : '', h.text)); });
+        headers.forEach(function (h) {
+          var th = el('th', h.num ? 'num' : h.select ? 'select' : '', h.node ? undefined : h.text);
+          if (h.node) th.appendChild(h.node);
+          headRow.appendChild(th);
+        });
         head.appendChild(headRow);
         target.appendChild(head);
         var body = el('tbody');
@@ -544,7 +577,7 @@
         rows.forEach(function (row) {
           var tr = el('tr');
           row.forEach(function (value, index) {
-            var td = el('td', headers[index].num ? 'num' : '');
+            var td = el('td', headers[index].num ? 'num' : headers[index].select ? 'select' : '');
             if (value instanceof Node) td.appendChild(value); else td.textContent = value;
             tr.appendChild(td);
           });
@@ -572,9 +605,116 @@
         render();
       });
 
+      // Marked workouts, by start time. A test is marked through its workout.
+      var selected = {};
+      var profileNames = [];
+      var selectionBar = document.getElementById('selection-bar');
+      var moveTarget = document.getElementById('move-target');
+
+      function selectedKeys() { return Object.keys(selected); }
+      function updateSelection() {
+        var count = selectedKeys().length;
+        selectionBar.hidden = !count;
+        document.getElementById('selection-count').textContent =
+          counted('development.selection.count', count);
+        Array.prototype.forEach.call(document.querySelectorAll('input[data-started]'), function (box) {
+          box.checked = Boolean(selected[box.getAttribute('data-started')]);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('input[data-select-all]'), function (box) {
+          var keys = box.selectKeys || [];
+          box.checked = keys.length > 0 && keys.every(function (key) { return selected[key]; });
+          box.disabled = !keys.length;
+        });
+      }
+      function rowBox(session, label) {
+        var box = el('input');
+        box.type = 'checkbox';
+        box.setAttribute('data-started', session.started);
+        box.setAttribute('aria-label', label);
+        box.addEventListener('change', function () {
+          if (box.checked) selected[session.started] = true; else delete selected[session.started];
+          updateSelection();
+        });
+        return box;
+      }
+      function allBox(sessions) {
+        var box = el('input');
+        box.type = 'checkbox';
+        box.setAttribute('data-select-all', '');
+        box.setAttribute('aria-label', t('development.select.all'));
+        box.selectKeys = sessions.map(function (s) { return s.started; });
+        box.addEventListener('change', function () {
+          box.selectKeys.forEach(function (key) {
+            if (box.checked) selected[key] = true; else delete selected[key];
+          });
+          updateSelection();
+        });
+        return box;
+      }
+      function fillMoveTargets() {
+        var others = profileNames.filter(function (name) { return name !== profileSelect.value; });
+        moveTarget.textContent = '';
+        others.forEach(function (name) {
+          var option = el('option', '', name);
+          option.value = name;
+          moveTarget.appendChild(option);
+        });
+        document.getElementById('move-row').hidden = !others.length;
+        document.getElementById('move-selected').hidden = !others.length;
+      }
+      function changeHistory(action, done) {
+        var keys = selectedKeys();
+        var buttons = selectionBar.querySelectorAll('button');
+        Array.prototype.forEach.call(buttons, function (button) { button.disabled = true; });
+        fetch('/api/history', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: action, profile: profileSelect.value, sessions: keys,
+                                target: action === 'move' ? moveTarget.value : undefined})
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.historyChange'));
+            return data.sessions;
+          });
+        }).then(function (sessions) {
+          selected = {};
+          setSessions(sessions);
+          message.className = 'success';
+          message.textContent = done(keys.length);
+        }).catch(function (error) {
+          message.className = 'error';
+          message.textContent = error.message;
+        }).then(function () {
+          Array.prototype.forEach.call(buttons, function (button) { button.disabled = false; });
+          updateSelection();
+        });
+      }
+      document.getElementById('clear-selection').addEventListener('click', function () {
+        selected = {};
+        updateSelection();
+      });
+      document.getElementById('delete-selected').addEventListener('click', function () {
+        var count = selectedKeys().length;
+        var withTests = allSessions.some(function (s) {
+          return selected[s.started] && s.tests && s.tests.length;
+        });
+        var question = counted('development.selection.confirmDelete', count) +
+          (withTests ? ' ' + t('development.selection.confirmTests') : '') + ' ' +
+          t('development.selection.confirmFinal');
+        if (!window.confirm(question)) return;
+        changeHistory('delete', function (n) { return counted('development.selection.deleted', n); });
+      });
+      document.getElementById('move-selected').addEventListener('click', function () {
+        var target = moveTarget.value;
+        changeHistory('move', function (n) {
+          return t('development.selection.moved.' + (n === 1 ? 'one' : 'other'), {count: n, profile: target});
+        });
+      });
+
       function setRange(next) {
         range = next;
         showAllSessions = false;
+        selected = {};
         try { window.localStorage.setItem('pyergometer-range', next); } catch (error) { /* optional */ }
         render();
       }
@@ -746,11 +886,13 @@
 
         // Tables for the period (newest first)
         document.getElementById('tests-title').textContent = t('development.tests.title', {period: periodText});
+        var testRows = tests.slice().reverse();
         table(document.getElementById('tests-table'),
-          [{text: t('development.column.date')}, {text: t('development.column.test')},
+          [{select: true, node: allBox(testRows.map(function (row) { return row.session; }))},
+           {text: t('development.column.date')}, {text: t('development.column.test')},
            {text: t('development.column.result')}, {text: t('development.vo2max.title'), num: true},
            {text: t('development.column.status')}],
-          tests.slice().reverse().map(function (t) {
+          testRows.map(function (t) {
             var test = t.test, result;
             if (test.type === 'astrand') {
               result = test.pulse ? I18N.t('development.result.astrand', {pulse: test.pulse,
@@ -765,8 +907,10 @@
             if (test.problems && test.problems.length) {
               state.appendChild(el('div', 'problems', test.problems.map(I18N.problem).join(' ')));
             }
-            return [longDate(t.date), I18N.t(test.type === 'astrand' ? 'development.test.astrand'
-              : 'development.test.ramp'), result,
+            var testName = I18N.t(test.type === 'astrand' ? 'development.test.astrand'
+              : 'development.test.ramp');
+            return [rowBox(t.session, I18N.t('development.select.row', {name: testName, date: longDate(t.date)})),
+              longDate(t.date), testName, result,
               test.vo2max ? number(test.vo2max, 1) : '–', state];
           }));
         document.getElementById('sessions-title').textContent = t('development.sessions.title', {period: periodText});
@@ -776,19 +920,28 @@
         showAll.textContent = t('development.showAll', {count: shownSessions.length});
         if (!showAllSessions) shownSessions = shownSessions.slice(0, SESSION_ROWS);
         table(document.getElementById('sessions-table'),
-          [{text: t('development.column.date')}, {text: t('development.column.workout')},
+          [{select: true, node: allBox(shownSessions)},
+           {text: t('development.column.date')}, {text: t('development.column.workout')},
            {text: t('development.column.time'), num: true}, {text: t('development.column.avgPulse'), num: true},
            {text: t('development.column.maxPulse'), num: true}, {text: t('development.column.avgWatts'), num: true},
            {text: 'kJ', num: true}, {text: t('chart.recovery'), num: true},
            {text: t('development.unit.wattPerBeat'), num: true}],
           shownSessions.map(function (s) {
             var drops = (s.recoveries || []).map(function (r) { return r.drop; }).join(', ');
-            return [longDate(s.date), s.completed ? sessionName(s)
+            return [rowBox(s, t('development.select.row', {name: sessionName(s), date: longDate(s.date)})),
+              longDate(s.date), s.completed ? sessionName(s)
               : t('development.stopped', {name: sessionName(s)}), minutes(s.seconds) + ' min',
               s.avg_pulse || '–', s.max_pulse || '–', s.avg_power || '–',
               s.energy_kj !== undefined ? number(s.energy_kj, 0) : '–', drops || '–',
               s.watt_per_beat ? number(s.watt_per_beat, 2) : '–'];
           }));
+        updateSelection();
+      }
+
+      function setSessions(sessions) {
+        sessions.forEach(function (s) { s.date = new Date(s.started); });
+        allSessions = sessions.sort(function (a, b) { return a.date - b.date; });
+        render();
       }
 
       function load(name) {
@@ -797,16 +950,14 @@
         try { window.localStorage.setItem('pyergometer-profile', name); } catch (error) { /* optional */ }
         document.getElementById('back-link').href = '/';
         history.replaceState(null, '', '/udvikling?profile=' + encodeURIComponent(name));
+        selected = {};
+        fillMoveTargets();
         fetch('/api/history?profile=' + encodeURIComponent(name)).then(function (response) {
           return response.json().then(function (data) {
             if (!response.ok) throw new Error(I18N.serverError(data, 'error.history'));
             return data.sessions;
           });
-        }).then(function (sessions) {
-          sessions.forEach(function (s) { s.date = new Date(s.started); });
-          allSessions = sessions.sort(function (a, b) { return a.date - b.date; });
-          render();
-        }).catch(function (error) {
+        }).then(setSessions).catch(function (error) {
           message.className = 'error';
           message.textContent = error.message;
         });
@@ -817,6 +968,7 @@
         if (!wanted) {
           try { wanted = window.localStorage.getItem('pyergometer-profile'); } catch (error) { wanted = null; }
         }
+        profileNames = (data.profiles || []).map(function (profile) { return profile.name; });
         (data.profiles || []).forEach(function (profile) {
           var option = el('option', '', profile.name);
           option.value = profile.name;

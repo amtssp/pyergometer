@@ -704,7 +704,9 @@ def analyze_astrand(samples, block, profile):
     pulse = (pulse5 + pulse6) / 2
     watts = _mean([s.get('power', s.get('target_power', 0)) for s in minute5 + minute6])
     result.update({'watts': int(round(watts)), 'pulse': int(round(pulse)),
-                   'pulse_minute5': int(round(pulse5)), 'pulse_minute6': int(round(pulse6))})
+                   'pulse_minute5': int(round(pulse5)), 'pulse_minute6': int(round(pulse6)),
+                   # Kept unrounded so the result can be worked out again for another profile.
+                   'watts_mean': round(watts, 2), 'pulse_mean': round(pulse, 2)})
     if abs(pulse6 - pulse5) > ASTRAND_STEADY_BEATS:
         result['problems'].append({'code': 'astrand_unstable', 'limit': ASTRAND_STEADY_BEATS})
     if pulse < ASTRAND_MIN_PULSE:
@@ -713,18 +715,24 @@ def analyze_astrand(samples, block, profile):
         result['problems'].append({'code': 'astrand_pulse_high', 'limit': ASTRAND_MAX_PULSE})
     if any(s.get('limited') for s in minute5 + minute6):
         result['problems'].append({'code': 'pulse_limited'})
+    astrand_fitness(result, watts, pulse, profile)
+    return result
+
+
+def astrand_fitness(result, watts, pulse, profile):
+    """Add the profile-dependent part of an Astrand result: age, sex and weight."""
     age = _profile_age(profile)
     sex = profile.get('sex') if profile else None
     weight = profile.get('weight_kg') if profile else None
     if not age or not sex or not weight:
         result['problems'].append({'code': 'astrand_profile_missing'})
-        return result
-    factor = astrand_age_factor(age)
-    litres = astrand_vo2max_litres(watts, pulse, sex) * factor
-    result.update({'age': age, 'age_factor': round(factor, 3), 'vo2max_litres': round(litres, 2),
-                   'vo2max': round(litres * 1000 / weight, 1)})
+    else:
+        factor = astrand_age_factor(age)
+        litres = astrand_vo2max_litres(watts, pulse, sex) * factor
+        result.update({'age': age, 'age_factor': round(factor, 3),
+                       'vo2max_litres': round(litres, 2),
+                       'vo2max': round(litres * 1000 / weight, 1)})
     result['valid'] = not result['problems']
-    return result
 
 
 def analyze_ramp(samples, block, profile):
@@ -751,13 +759,42 @@ def analyze_ramp(samples, block, profile):
         'map_watts': int(round(best)),
         'ftp_watts': int(round(best * 0.75)),
         'max_pulse': max(pulses) if pulses else None})
+    ramp_fitness(result, best, profile)
+    return result
+
+
+def ramp_fitness(result, best, profile):
+    """Add the profile-dependent part of a ramp result: the weight."""
     weight = profile.get('weight_kg') if profile else None
     if not weight:
         result['problems'].append({'code': 'ramp_weight_missing'})
-        return result
-    # Common estimate from maximal cycling power: VO2max = 10.8 x W/kg + 7 (ml/kg/min).
-    result['vo2max'] = round(10.8 * best / weight + 7, 1)
+    else:
+        # Common estimate from maximal cycling power: VO2max = 10.8 x W/kg + 7 (ml/kg/min).
+        result['vo2max'] = round(10.8 * best / weight + 7, 1)
     result['valid'] = not result['problems']
+
+
+PROFILE_TEST_PROBLEMS = ('astrand_profile_missing', 'ramp_weight_missing')
+PROFILE_TEST_FIELDS = ('age', 'age_factor', 'vo2max_litres', 'vo2max')
+
+
+def rescore_test(test, profile):
+    """A saved test result worked out again with another profile's details."""
+    if test.get('type') == 'astrand' and test.get('pulse'):
+        watts = test.get('watts_mean', test['watts'])
+        pulse = test.get('pulse_mean', test['pulse'])
+
+        def fitness(result):
+            astrand_fitness(result, watts, pulse, profile)
+    elif test.get('type') == 'ramp' and test.get('map_watts'):
+        def fitness(result):
+            ramp_fitness(result, test['map_watts'], profile)
+    else:
+        return test  # an incomplete test has no profile-dependent part
+    result = dict((key, value) for key, value in test.items() if key not in PROFILE_TEST_FIELDS)
+    result['problems'] = [problem for problem in test.get('problems', [])
+                          if problem.get('code') not in PROFILE_TEST_PROBLEMS]
+    fitness(result)
     return result
 
 
@@ -786,6 +823,40 @@ def read_history(path):
 def append_history(path, session):
     sessions = read_history(path)
     sessions.append(session)
+    write_history(path, sessions)
+
+
+def change_history(path, profile_name, started, target=None):
+    """Delete a profile's sessions, chosen by start time, or move them to the target profile.
+
+    A moved session's tests are worked out again with the target profile's details.
+    Returns the sessions left on the profile.
+    """
+    if (not isinstance(started, list) or not started or
+            not all(isinstance(value, text_types) for value in started)):
+        raise ValueError('Choose the workouts to change')
+    if target is not None and target['name'] == profile_name:
+        raise ValueError('Choose another user profile to move the workouts to')
+    wanted = set(started)
+    sessions = read_history(path)
+    found = set()
+    kept = []
+    for session in sessions:
+        if session.get('profile') == profile_name and session.get('started') in wanted:
+            found.add(session['started'])
+            if target is None:
+                continue
+            session = dict(session)
+            session['profile'] = target['name']
+            session['tests'] = [rescore_test(test, target) for test in session.get('tests', [])]
+        kept.append(session)
+    if found != wanted:
+        raise ValueError('Some of the chosen workouts were not found')
+    write_history(path, kept)
+    return [session for session in kept if session.get('profile') == profile_name]
+
+
+def write_history(path, sessions):
     directory = os.path.dirname(os.path.abspath(path))
     temporary = tempfile.NamedTemporaryFile(
         mode='wb', prefix='history-', suffix='.tmp', dir=directory, delete=False)
@@ -1249,7 +1320,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
     def _handle_post(self):
         request_path = urlparse(self.path).path
         if request_path not in ('/api/start', '/api/presets', '/api/profiles',
-                                '/api/chart/reset',
+                                '/api/history', '/api/chart/reset',
                                 '/api/demo', '/api/update', '/api/stop',
                                 '/api/heart-rate/scan', '/api/bike-settings'):
             self._send_json(404, {'error': 'Not found'})
@@ -1370,6 +1441,30 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {'error': 'Could not save user profile: %s' % error})
                 return
             self._send_json(200, {'profiles': profiles})
+            return
+
+        if request_path == '/api/history':
+            if not isinstance(request, dict):
+                self._send_json(400, {'error': 'History changes must be an object'})
+                return
+            try:
+                target = None
+                if request.get('action') == 'move':
+                    target_name = _profile_name(request.get('target'))
+                    target = next((item for item in read_profiles(
+                        self.server.profiles_file, self.server.presets_file)
+                        if item['name'] == target_name), None)
+                    if target is None:
+                        raise ValueError('User profile was not found')
+                elif request.get('action') != 'delete':
+                    raise ValueError('Choose a supported history action')
+                sessions = change_history(self.server.history_file,
+                                          _profile_name(request.get('profile')),
+                                          request.get('sessions'), target)
+            except (IOError, ValueError, TypeError, OSError) as error:
+                self._send_json(400, {'error': 'Could not change the training history: %s' % error})
+                return
+            self._send_json(200, {'sessions': sessions})
             return
 
         if request_path == '/api/presets':

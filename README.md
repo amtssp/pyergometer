@@ -83,6 +83,9 @@ workout setups and the selected smartwatch are stored separately for each
 profile, so selecting a profile switches to that person's settings. Existing setups in
 ``workouts.json`` are kept under the initial ``Standard`` profile. New profile
 data is stored locally in the Git-ignored ``user_profiles.json`` file.
+The chosen profile is remembered per browser, so a new phone or tablet starts on
+``Standard``. Pressing Start there first asks whether to train as one of the
+other profiles, create a new one or continue as ``Standard``.
 Name and save workout setups locally, then load them again from that profile's
 saved setup list. Presets contain only the ordered intervals and breaks, with
 pulse targets as a percentage of maximum, so the same workout adapts to each
@@ -188,7 +191,10 @@ last 12 months or everything; the page shows:
 * A year-by-year table: workouts, time, first-to-latest VO2max for each test
   type, average pulse drop and average watt per heartbeat.
 * Tables of every fitness test (including invalid ones and the reason) and of
-  every workout, newest first.
+  every workout, newest first. Mark rows to delete them, or to move them to
+  another user profile; a moved fitness test is worked out again with that
+  profile's age, sex and weight. A fitness test belongs to its workout, so
+  marking one marks the other.
 
 Pulse drop and watt per heartbeat only rise when fitness improves, so they show
 progress between the fitness tests without any extra effort: add a

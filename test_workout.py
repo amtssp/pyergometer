@@ -20,6 +20,10 @@ from workout import (
     summarize_workout,
     analyze_astrand,
     analyze_ramp,
+    append_history,
+    change_history,
+    read_history,
+    rescore_test,
     astrand_age_factor,
     astrand_vo2max_litres,
     update_profile_details,
@@ -1557,6 +1561,94 @@ class FitnessTestTests(unittest.TestCase):
         self.assertEqual(short['problems'][0], {'code': 'astrand_incomplete'})
         for result in (unstable, too_low, limited, no_profile, short):
             self.assertFalse(result['valid'])
+
+    def test_astrand_result_is_worked_out_again_for_another_profile(self):
+        samples, block = self.astrand_samples(148, 150)
+        without = analyze_astrand(samples, block, {})
+
+        moved = rescore_test(without, self.profile)
+
+        self.assertEqual(moved, analyze_astrand(samples, block, self.profile))
+        self.assertEqual(rescore_test(moved, {})['problems'], [{'code': 'astrand_profile_missing'}])
+        self.assertNotIn('vo2max', rescore_test(moved, {}))
+        # A problem that has nothing to do with the profile stays.
+        unstable = analyze_astrand(*self.astrand_samples(140, 152), profile={})
+        self.assertEqual(rescore_test(unstable, self.profile)['problems'],
+                         [{'code': 'astrand_unstable', 'limit': 5}])
+        incomplete = {'type': 'astrand', 'valid': False, 'problems': [{'code': 'astrand_incomplete'}]}
+        self.assertEqual(rescore_test(incomplete, self.profile), incomplete)
+
+    def history_with(self, sessions):
+        directory = tempfile.mkdtemp(prefix='pyergometer-history-test-')
+        self.addCleanup(shutil.rmtree, directory)
+        path = os.path.join(directory, 'history.json')
+        for session in sessions:
+            append_history(path, session)
+        return path
+
+    def test_history_sessions_are_deleted_or_moved_by_start_time(self):
+        samples, block = self.astrand_samples(148, 150)
+        test = analyze_astrand(samples, block, {})
+        path = self.history_with([
+            {'profile': 'Standard', 'started': '2026-10-28T16:32:45', 'tests': [test]},
+            {'profile': 'Standard', 'started': '2026-10-28T17:00:00', 'tests': []},
+            {'profile': 'Steen', 'started': '2026-10-28T17:00:00', 'tests': []}])
+        steen = dict(self.profile, name='Steen')
+
+        left = change_history(path, 'Standard', ['2026-10-28T16:32:45'], steen)
+
+        self.assertEqual([s['started'] for s in left], ['2026-10-28T17:00:00'])
+        moved = [s for s in read_history(path) if s['profile'] == 'Steen']
+        self.assertEqual(len(moved), 2)
+        self.assertTrue(moved[0]['tests'][0]['valid'])
+        # Only the chosen profile's session with that start time is deleted.
+        self.assertEqual(change_history(path, 'Standard', ['2026-10-28T17:00:00']), [])
+        self.assertEqual([s['profile'] for s in read_history(path)], ['Steen', 'Steen'])
+        for started, target in ((['2026-01-01T00:00:00'], None), ([], None),
+                                (['2026-10-28T17:00:00'], steen)):
+            with self.assertRaises(ValueError):
+                change_history(path, 'Steen', started, target)
+
+    def test_history_can_be_changed_from_the_development_page(self):
+        directory = tempfile.mkdtemp(prefix='pyergometer-history-api-test-')
+        self.addCleanup(shutil.rmtree, directory)
+        server = WorkoutServer(('127.0.0.1', 0), simulate=True)
+        server.history_file = os.path.join(directory, 'history.json')
+        server.profiles_file = os.path.join(directory, 'profiles.json')
+        server.presets_file = os.path.join(directory, 'workouts.json')
+        create_profile(server.profiles_file, server.presets_file, 'Steen')
+        append_history(server.history_file, {'profile': 'Standard', 'started': 'a', 'tests': []})
+        append_history(server.history_file, {'profile': 'Standard', 'started': 'b', 'tests': []})
+        thread = threading.Thread(target=server.serve_forever)
+        thread.daemon = True
+        thread.start()
+
+        def stop():
+            server.shutdown()
+            thread.join()
+            server.server_close()
+        self.addCleanup(stop)
+
+        def post(body):
+            connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+            connection.request('POST', '/api/history', body=json.dumps(body), headers={
+                'Content-Type': 'application/json',
+                'Origin': 'http://127.0.0.1:%d' % server.server_port})
+            response = connection.getresponse()
+            data = json.loads(response.read().decode('utf-8'))
+            connection.close()
+            return response.status, data
+
+        status, data = post({'action': 'move', 'profile': 'Standard', 'sessions': ['a'],
+                             'target': 'Steen'})
+        self.assertEqual((status, [s['started'] for s in data['sessions']]), (200, ['b']))
+        status, data = post({'action': 'delete', 'profile': 'Standard', 'sessions': ['b']})
+        self.assertEqual((status, data['sessions']), (200, []))
+        self.assertEqual(post({'action': 'move', 'profile': 'Steen', 'sessions': ['a'],
+                               'target': 'Nobody'})[0], 400)
+        self.assertEqual(post({'action': 'rename', 'profile': 'Steen', 'sessions': ['a']})[0], 400)
+        self.assertEqual([(s['profile'], s['started']) for s in read_history(server.history_file)],
+                         [('Steen', 'a')])
 
     def test_ramp_test_gives_map_ftp_and_vo2max(self):
         block = {'start': 300, 'end': 2100, 'index': 1}

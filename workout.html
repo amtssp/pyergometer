@@ -215,6 +215,34 @@
     button.danger { color: #fff; background: var(--stop); border-color: var(--stop); }
     button.danger:hover:not(:disabled) { background: #a51f1f; }
     button.ghost { background: transparent; border-color: var(--line); }
+
+    /* Asked before a workout starts on the shared "Standard" profile */
+    .profile-check {
+      width: calc(100% - 2rem);
+      max-width: 30rem;
+      padding: 1.2rem 1.3rem;
+      color: var(--ink);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 18px 48px rgba(16, 32, 48, .28);
+    }
+    .profile-check::backdrop { background: rgba(16, 32, 48, .45); }
+    .profile-check p { margin: .5rem 0 1rem; }
+    .profile-check-choices { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .profile-check-new {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: .5rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+    }
+    .profile-check-new label { flex: 1 1 12rem; }
+    .profile-check-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
+    #profile-check-status { margin: .6rem 0 0; }
+    #profile-check-status:empty { display: none; }
     button:disabled { cursor: not-allowed; opacity: .55; }
     #start.primary:hover:not(:disabled) { background: #19733f; }
 
@@ -571,6 +599,23 @@
       </div>
     </div>
   </details>
+
+  <dialog id="profile-check" class="profile-check" aria-labelledby="profile-check-title">
+    <h2 id="profile-check-title"></h2>
+    <p id="profile-check-text"></p>
+    <div id="profile-check-choices" class="profile-check-choices"></div>
+    <div class="profile-check-new">
+      <label for="profile-check-name"><span data-i18n="profileCheck.newLabel"></span>
+        <input id="profile-check-name" type="text" maxlength="60" data-i18n-attr="placeholder:profile.new.placeholder">
+      </label>
+      <button id="profile-check-create" type="button" data-i18n="profileCheck.create"></button>
+    </div>
+    <p id="profile-check-status" class="error" aria-live="polite"></p>
+    <div class="profile-check-foot">
+      <button id="profile-check-cancel" class="ghost" type="button" data-i18n="profileCheck.cancel"></button>
+      <button id="profile-check-standard" class="ghost" type="button"></button>
+    </div>
+  </dialog>
 
   <details class="panel" id="profile-panel">
     <summary><span id="profile-title" data-i18n="profile.title"></span><span id="profile-hint" class="hint"></span></summary>
@@ -2232,6 +2277,101 @@
         });
       });
 
+      // A workout on the shared "Standard" profile is easily started by mistake on a
+      // new phone or tablet, as the chosen profile is remembered per browser.
+      var SHARED_PROFILE = 'Standard';
+      var profileCheck = document.getElementById('profile-check');
+      var profileCheckName = document.getElementById('profile-check-name');
+      var profileCheckStatus = document.getElementById('profile-check-status');
+      var sharedProfileConfirmed = false;
+
+      function needsProfileCheck() {
+        return activeProfile === SHARED_PROFILE && !sharedProfileConfirmed &&
+          typeof profileCheck.showModal === 'function';
+      }
+
+      // Changes profile but keeps the chosen workout, unlike the profile picker.
+      function useProfile(name) {
+        activeProfile = name;
+        userProfile.value = name;
+        rememberProfile(name);
+        applyProfileWatch();
+        applyProfileMaxPulse();
+        return loadPresetList();
+      }
+
+      function openProfileCheck() {
+        var others = Object.keys(profilesByName).filter(function (name) { return name !== SHARED_PROFILE; });
+        document.getElementById('profile-check-title').textContent =
+          t('profileCheck.title', {profile: SHARED_PROFILE});
+        document.getElementById('profile-check-text').textContent =
+          t(others.length ? 'profileCheck.text' : 'profileCheck.textNone', {profile: SHARED_PROFILE});
+        document.getElementById('profile-check-standard').textContent =
+          t('profileCheck.continue', {profile: SHARED_PROFILE});
+        var choices = document.getElementById('profile-check-choices');
+        choices.textContent = '';
+        choices.hidden = !others.length;
+        others.forEach(function (name) {
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'primary';
+          button.textContent = t('profileCheck.use', {profile: name});
+          button.addEventListener('click', function () {
+            profileCheck.close();
+            useProfile(name).catch(function (error) {
+              status.className = 'error';
+              status.textContent = error.message;
+            });
+            startButton.click();
+          });
+          choices.appendChild(button);
+        });
+        profileCheckName.value = '';
+        profileCheckStatus.textContent = '';
+        profileCheck.showModal();
+        var first = choices.querySelector('button');
+        (first || profileCheckName).focus();
+      }
+
+      document.getElementById('profile-check-cancel').addEventListener('click', function () {
+        profileCheck.close();
+      });
+      document.getElementById('profile-check-standard').addEventListener('click', function () {
+        sharedProfileConfirmed = true;
+        profileCheck.close();
+        startButton.click();
+      });
+      document.getElementById('profile-check-create').addEventListener('click', function () {
+        var name = profileCheckName.value.trim();
+        if (!name) {
+          profileCheckStatus.textContent = t('status.profileNameMissing');
+          profileCheckName.focus();
+          return;
+        }
+        fetch('/api/profiles', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: 'create', name: name})
+        }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(I18N.serverError(data, 'error.createProfile'));
+            return data.profiles;
+          });
+        }).then(function (profiles) {
+          // The chosen workout stays; the new profile still needs its details.
+          renderProfiles(profiles, name);
+          profileCheck.close();
+          var panel = document.getElementById('profile-panel');
+          panel.open = true;
+          panel.scrollIntoView({block: 'start'});
+          status.className = 'success';
+          status.textContent = t('profileCheck.created', {profile: name});
+          return loadPresetList();
+        }).catch(function (error) {
+          profileCheckStatus.textContent = error.message;
+        });
+      });
+
       document.getElementById('create-profile').addEventListener('click', function () {
         var name = newProfileName.value.trim();
         if (!name) {
@@ -2859,6 +2999,10 @@
           return;
         }
 
+        if (needsProfileCheck()) {
+          openProfileCheck();
+          return;
+        }
         status.className = '';
         status.textContent = '';
         var plan = getPlan();
