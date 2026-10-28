@@ -49,6 +49,10 @@
       align-items: center;
       gap: .75rem 1rem;
     }
+    /* On a phone or tablet the bar wraps to several rows and would hide the charts. */
+    @media (max-width: 760px), (max-height: 700px) {
+      .topbar { position: static; }
+    }
     .brand { display: flex; align-items: center; gap: .6rem; margin-right: auto; }
     .brand-mark {
       display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 10px;

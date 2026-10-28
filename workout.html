@@ -50,6 +50,10 @@
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--line);
     }
+    /* On a phone or tablet the bar wraps to several rows and would hide the chart. */
+    @media (max-width: 760px), (max-height: 700px) {
+      .topbar { position: static; }
+    }
     .topbar-row {
       display: flex;
       flex-wrap: wrap;
