@@ -692,6 +692,28 @@ class DeviceDriverTests(unittest.TestCase):
         simulator.set_power(absolute=120)
         self.assertEqual(simulator.power, 120)
 
+    def test_kettler_load_rises_at_once_after_time_at_the_floor(self):
+        class FakePort:
+            def __init__(self):
+                self.written = []
+
+            def write(self, data):
+                self.written.append(data)
+
+        bike = Kettler.__new__(Kettler)
+        bike.power = 0
+        bike.xpower = 0.0
+        bike.serialport = FakePort()
+        # A long warm-up with the pulse above target keeps asking for less load.
+        for _ in range(240):
+            bike.set_power(relative=-0.30)
+        self.assertEqual(bike.power, 25)
+        # Once the target is above the pulse, the load leaves the floor within seconds.
+        for _ in range(10):
+            bike.set_power(relative=0.30)
+        self.assertEqual(bike.power, 30)
+        self.assertEqual(bike.serialport.written[-1], b'PW 30\r\n')
+
     def test_create_device_rejects_unknown_type_and_missing_port(self):
         with self.assertRaises(ValueError):
             create_device('peloton')

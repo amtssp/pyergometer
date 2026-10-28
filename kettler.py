@@ -66,7 +66,10 @@ class Kettler(ErgometerDevice):
             self.xpower += relative
         elif absolute > 0.0:
             self.xpower = absolute
-        
+        # Keep the wanted load within what the bike can do, so time spent at the
+        # 25 W floor is not owed back before the load can rise again.
+        self.xpower = max(25.0, min(400.0, self.xpower))
+
         if roundto(self.power) != roundto(self.xpower):
             self.power = roundto(self.xpower)
             watts = self.power
