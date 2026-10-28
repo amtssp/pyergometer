@@ -158,6 +158,10 @@ the user profile first. Results are saved in the Git-ignored
 ``training_history.json`` together with a summary of every workout (pulse,
 watt, energy, watt per heartbeat in settled pulse intervals and every
 "+ Pulsfald" pulse-drop block, where the rider sits still for 60 seconds).
+The drop is measured from the pulse the workout reached, so "+ Pulsfald" goes
+right after the last load: an easy ending after it (pauses, blocks named
+cool-down, a falling ramp) is removed, with an undo, and a repeat right before
+it leaves out its last easy interval.
 
 * ``Test · Åstrand (submaksimal)``: 3 minutes warm-up, 6 minutes at a fixed
   load (suggested 75 W for women and 100 W for men) and a pulse drop. VO2max is

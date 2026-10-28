@@ -473,6 +473,11 @@ def _optional_maximum_pulse(plan):
         return None
 
 
+def _followed_by_recovery(blocks, index):
+    following = blocks[index + 1] if index + 1 < len(blocks) else None
+    return isinstance(following, dict) and following.get('type') == 'recovery'
+
+
 def build_chart_plan(plan):
     """Validate a workout and expand it into chart blocks with absolute times.
 
@@ -551,6 +556,9 @@ def build_chart_plan(plan):
                 phases.append((entry, seconds))
             for unused in range(count):
                 entries.extend((dict(entry), seconds) for entry, seconds in phases)
+            if _followed_by_recovery(blocks, index):
+                # The pulse drop is measured from the last hard interval, not after an easy one.
+                entries.pop()
         else:
             raise ValueError('%s must be an interval, break, ramp, recovery or repeat' % label)
 

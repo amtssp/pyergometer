@@ -587,6 +587,10 @@
         <button id="add-recovery" type="button" data-i18n="add.recovery"></button>
         <button id="add-repeat" type="button" data-i18n="add.repeat"></button>
       </div>
+      <p id="recovery-note" class="load-note" hidden>
+        <span id="recovery-note-text"></span>
+        <button id="undo-recovery" class="link-button" type="button" data-i18n="load.undo"></button>
+      </p>
 
       <div class="subsection">
         <div class="settings">
@@ -1033,6 +1037,13 @@
         return label;
       }
 
+      // A repeat right before "+ Pulsfald" leaves out its last easy interval, so the
+      // pulse drop is measured from the last hard one (as the server does).
+      function endsBeforeRecovery(row) {
+        var next = row.nextElementSibling;
+        return Boolean(next && next.dataset.type === 'recovery');
+      }
+
       function updateSummary() {
         var rows = blocks.querySelectorAll('.block');
         var totalSeconds = 0;
@@ -1049,9 +1060,11 @@
             if (row.querySelector('.count').validity.valid &&
                 row.querySelector('.work-seconds').validity.valid &&
                 row.querySelector('.recovery-seconds').validity.valid) {
-              totalSeconds += count * (workSeconds + recoverySeconds);
+              totalSeconds += count * (workSeconds + recoverySeconds) -
+                (endsBeforeRecovery(row) ? recoverySeconds : 0);
             }
             lines.push(t('summary.repeat', {count: count, work: workSeconds, recovery: recoverySeconds}));
+            if (endsBeforeRecovery(row)) lines.push(t('summary.repeat.lastSkipped'));
             if (powerMode) {
               lines.push(t('summary.repeat.watts', {work: row.querySelector('.work-power').value,
                 recovery: row.querySelector('.recovery-power').value}));
@@ -1290,8 +1303,10 @@
             if (!isFinite(count) || phases.some(function (phase) {
               return !isFinite(phase.seconds) || !isFinite(phase.value);
             })) return;
+            var skipLast = endsBeforeRecovery(row);
             for (var repeatIndex = 0; repeatIndex < count; repeatIndex += 1) {
               phases.forEach(function (phase) {
+                if (skipLast && repeatIndex === count - 1 && phase.phase === 'recovery') return;
                 var entry = powerMode
                   ? {type: 'power', power: phase.value}
                   : {type: 'interval', pulse: pulseValue(phase.value), percent: phase.value};
@@ -1783,9 +1798,10 @@
           Array.prototype.forEach.call(blocks.querySelectorAll('.block'), function (item, itemIndex) {
             if (itemIndex !== index) {
               if (item.dataset.type === 'repeat') {
+                var easySeconds = parseInt(item.querySelector('.recovery-seconds').value, 10) || 0;
                 var repeatSeconds = (parseInt(item.querySelector('.count').value, 10) || 0) *
-                  ((parseInt(item.querySelector('.work-seconds').value, 10) || 0) +
-                   (parseInt(item.querySelector('.recovery-seconds').value, 10) || 0));
+                  ((parseInt(item.querySelector('.work-seconds').value, 10) || 0) + easySeconds) -
+                  (endsBeforeRecovery(item) ? easySeconds : 0);
                 chartDrag.otherMinutes += Math.ceil(repeatSeconds / 30) / 2;
               } else {
                 chartDrag.otherMinutes += item.dataset.type === 'recovery'
@@ -1914,6 +1930,7 @@
       }
 
       function addBlock(type, values) {
+        hideRecoveryNote();
         values = values || {};
         var powerMode = workoutMode === 'power';
         var row = document.createElement('fieldset');
@@ -2015,6 +2032,57 @@
         blocks.appendChild(row);
         blocks.classList.toggle('has-blocks', blocks.children.length > 0);
         updateSummary();
+      }
+
+      // The pulse drop is measured from the pulse the workout reached, so "+ Pulsfald"
+      // goes right after the last load and an easy end or cool-down after it is removed.
+      var planBeforeRecovery = null;
+
+      function hideRecoveryNote() {
+        planBeforeRecovery = null;
+        var note = document.getElementById('recovery-note');
+        if (note) note.hidden = true;
+      }
+
+      function showRecoveryNote(text, undo) {
+        document.getElementById('recovery-note-text').textContent = text;
+        document.getElementById('undo-recovery').hidden = !undo;
+        document.getElementById('recovery-note').hidden = false;
+      }
+
+      function isEasyEnd(block) {
+        if (block.type === 'break') return true;
+        if (block.label && I18N.everyLanguage('template.block.cooldown').indexOf(block.label) >= 0) {
+          return true;
+        }
+        if (block.type === 'ramp') {
+          return block.end_power !== undefined ? block.end_power < block.start_power
+            : block.end_percent < block.start_percent;
+        }
+        return false;
+      }
+
+      function addRecovery() {
+        var items = readBlocks();
+        var rows = Array.prototype.slice.call(blocks.querySelectorAll('.block'));
+        var first = items.length;
+        while (first > 0 && isEasyEnd(items[first - 1])) first -= 1;
+        if (first > 0 && items[first - 1].type === 'recovery') {
+          showRecoveryNote(t('recovery.already'), false);
+          return;
+        }
+        // Without any load there is nothing to measure from, so nothing is removed.
+        if (first === 0) first = items.length;
+        var before = snapshotPlan();
+        var removed = rows.slice(first).map(function (row, index) {
+          return t('recovery.removedBlock', {name: row.querySelector('h3').textContent,
+            minutes: I18N.number(items[first + index].minutes)});
+        });
+        rows.slice(first).forEach(function (row) { blocks.removeChild(row); });
+        addBlock('recovery');
+        if (!removed.length) return;
+        planBeforeRecovery = before;
+        showRecoveryNote(t('recovery.placed', {removed: removed.join(', ')}), true);
       }
 
       function astrandTemplate() {
@@ -2504,6 +2572,7 @@
       }
 
       function showLoaded(name, before) {
+        hideRecoveryNote();
         // Undo is only offered when there was a plan to go back to.
         planBeforeLoad = before && before.blocks.length ? before : null;
         document.getElementById('load-note-text').textContent = t('load.loaded', {name: name});
@@ -2511,10 +2580,7 @@
         document.getElementById('load-note').hidden = false;
       }
 
-      document.getElementById('undo-load').addEventListener('click', function () {
-        if (!planBeforeLoad) return;
-        var plan = planBeforeLoad;
-        planBeforeLoad = null;
+      function restorePlan(plan) {
         blocks.textContent = '';
         blocks.classList.remove('has-blocks');
         setWorkoutMode(plan.mode, false);
@@ -2524,6 +2590,13 @@
         workoutName = plan.name;
         loadedBlocksSignature = plan.signature;
         updateSummary();
+      }
+
+      document.getElementById('undo-load').addEventListener('click', function () {
+        if (!planBeforeLoad) return;
+        var plan = planBeforeLoad;
+        planBeforeLoad = null;
+        restorePlan(plan);
         document.getElementById('load-note').hidden = true;
         status.className = 'success';
         status.textContent = t('load.undone');
@@ -2748,8 +2821,18 @@
       document.getElementById('add-ramp').addEventListener('click', function () {
         addBlock('ramp');
       });
-      document.getElementById('add-recovery').addEventListener('click', function () {
-        addBlock('recovery');
+      document.getElementById('add-recovery').addEventListener('click', addRecovery);
+      document.getElementById('undo-recovery').addEventListener('click', function () {
+        if (!planBeforeRecovery) return;
+        var plan = planBeforeRecovery;
+        restorePlan(plan);
+        status.className = 'success';
+        status.textContent = t('load.undone');
+      });
+      // Any other change to the blocks makes the offered undo out of date.
+      blocks.addEventListener('input', hideRecoveryNote);
+      blocks.addEventListener('click', function (event) {
+        if (event.target.tagName === 'BUTTON') hideRecoveryNote();
       });
       Array.prototype.forEach.call(
         document.querySelectorAll('input[name="workout-mode"]'),

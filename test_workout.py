@@ -1454,6 +1454,19 @@ class FitnessDataTests(unittest.TestCase):
 
         self.assertEqual((bo['birth_year'], bo['sex'], bo['weight_kg']), (1959, None, None))
 
+    def test_repeat_before_a_pulse_drop_leaves_out_its_last_easy_interval(self):
+        repeat = {'type': 'repeat', 'count': 3, 'work_seconds': 180, 'work_percent': 85,
+                  'recovery_seconds': 180, 'recovery_percent': 65}
+        alone = build_chart_plan({'max_pulse': 160, 'blocks': [repeat]})
+        chart = build_chart_plan({'max_pulse': 160, 'blocks': [repeat, {'type': 'recovery'}]})
+
+        self.assertEqual(alone['duration'], 3 * 360)
+        self.assertEqual([b.get('repeat_phase') or b['type'] for b in chart['blocks']],
+                         ['work', 'recovery', 'work', 'recovery', 'work', 'recovery'][:5] + ['recovery'])
+        self.assertEqual(chart['blocks'][4]['repeat_phase'], 'work')
+        self.assertEqual((chart['blocks'][5]['type'], chart['blocks'][5]['start']), ('recovery', 900))
+        self.assertEqual(chart['duration'], 960)
+
     def test_recovery_block_sits_still_at_minimum_load(self):
         chart = build_chart_plan({'max_pulse': 180, 'blocks': [
             {'type': 'interval', 'minutes': 1, 'percent': 80},

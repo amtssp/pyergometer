@@ -41,6 +41,12 @@
     });
   }
 
+  // The text for a key in every language, e.g. to recognise a label saved in another one.
+  function everyLanguage(key) {
+    return Object.keys(LANGUAGES).map(function (code) { return LANGUAGES[code][key]; })
+      .filter(function (text) { return typeof text === 'string'; });
+  }
+
   // Decimal numbers with the language's decimal sign and no thousands separator.
   function number(value, decimals) {
     var options = {useGrouping: false};
@@ -101,6 +107,7 @@
   window.I18N = {
     language: language,
     t: t,
+    everyLanguage: everyLanguage,
     number: number,
     problem: problem,
     serverError: serverError,
