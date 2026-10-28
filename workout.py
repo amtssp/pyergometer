@@ -49,8 +49,11 @@ STARTING_ERROR = {
     'params': {'seconds': WATCH_START_TIMEOUT}}
 LANGUAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lang')
 TEMPLATE_NAME_PREFIX = 'template.name.'
-# The name of the HIIT template before it got its "Puls · " prefix.
-LEGACY_TEMPLATE_NAMES = ('HIIT 30/30 (13 gentagelser)',)
+# Earlier names of the HIIT template: before its "Puls · " prefix, and as a
+# pulse template before it became a watt template.
+LEGACY_TEMPLATE_NAMES = ('HIIT 30/30 (13 gentagelser)',
+                         'Puls · HIIT 30/30 (13 gentagelser)',
+                         'Pulse · HIIT 30/30 (13 repeats)')
 
 
 def read_languages():

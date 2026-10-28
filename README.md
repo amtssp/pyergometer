@@ -92,9 +92,12 @@ in large digits together with the current target.
 Switching user profiles clears the previous workout's chart and resets the
 unsaved form so that one person's workout history is not shown for another.
 The shared workout template list includes a 20-minute HIIT session: 4 minutes
-at 55% of maximum pulse, 13 repetitions of 30 seconds at 85% plus 30 seconds
-at 60%, then 3 minutes at the ergometer's minimum 25 W. The shared template named
-``Puls · HIIT 30/30 (13 gentagelser)`` is
+at 80 W, 13 repetitions of 30 seconds at 150 W plus 30 seconds at 50 W, then
+3 minutes at the ergometer's minimum 25 W. It sets the watts because the pulse
+cannot follow 30-second intervals. ``Puls · Intervaller 3 × 3 min`` is the
+pulse-controlled alternative: 5 minutes at 60% of maximum pulse, 3 repetitions
+of 3 minutes at 85% plus 3 minutes at 65%, then 3 minutes at 25 W. The shared
+template named ``Watt · HIIT 30/30 (13 gentagelser)`` is
 copied into the editable plan and cannot be overwritten. The watt-controlled
 template ``Watt · VO₂ Max 5 × 5`` is a 28¼-minute session: a 100 → 168 W ramp,
 220 W and 125 W openers, 5 repetitions of 1 minute at 285 W plus 1¼ minutes at

@@ -2621,18 +2621,19 @@
         if (!builtinTemplate.value) return;
         var before = snapshotPlan();
         var templates = {
+          // The pulse cannot follow 30-second intervals, so this one sets the watts.
           'hiit-30-30': {
-            mode: 'pulse',
+            mode: 'power',
             message: t('template.message.hiit-30-30'),
             blocks: [
-              {type: 'interval', label: t('template.block.warmup'), minutes: 4, percent: 55},
+              {type: 'interval', label: t('template.block.warmup'), minutes: 4, power: 80},
               {
                 type: 'repeat',
                 count: 13,
                 work_seconds: 30,
-                work_percent: 85,
+                work_power: 150,
                 recovery_seconds: 30,
-                recovery_percent: 60
+                recovery_power: 50
               },
               {type: 'break', label: t('template.block.cooldown'), minutes: 3, power: 25}
             ]
