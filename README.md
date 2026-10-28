@@ -99,7 +99,10 @@ at 80 W, 13 repetitions of 30 seconds at 150 W plus 30 seconds at 50 W, then
 3 minutes at the ergometer's minimum 25 W. It sets the watts because the pulse
 cannot follow 30-second intervals. ``Puls · Intervaller 3 × 3 min`` is the
 pulse-controlled alternative: 5 minutes at 60% of maximum pulse, 3 repetitions
-of 3 minutes at 85% plus 3 minutes at 65%, then 3 minutes at 25 W. The shared
+of 3 minutes at 85% plus 3 minutes at 65%, then 3 minutes at 25 W.
+``Puls · 4 × 4 min`` is the Norwegian 4 x 4 for fitness: 5 minutes at 65%,
+4 repetitions of 4 minutes at 90% plus 3 minutes at 70%, and a pulse drop right
+after the last hard interval (31 minutes in all). The shared
 template named ``Watt · HIIT 30/30 (13 gentagelser)`` is
 copied into the editable plan and cannot be overwritten. The watt-controlled
 template ``Watt · VO₂ Max 5 × 5`` is a 28¼-minute session: a 100 → 168 W ramp,

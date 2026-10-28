@@ -554,6 +554,7 @@
             <option value="" data-i18n="choose.templates.placeholder"></option>
             <option value="hiit-30-30" data-i18n="template.name.hiit-30-30"></option>
             <option value="pulse-3x3" data-i18n="template.name.pulse-3x3"></option>
+            <option value="pulse-4x4" data-i18n="template.name.pulse-4x4"></option>
             <option value="vo2max-5x5" data-i18n="template.name.vo2max-5x5"></option>
             <option value="astrand" data-i18n="template.name.astrand"></option>
             <option value="ramp-test" data-i18n="template.name.ramp-test"></option>
@@ -2881,6 +2882,23 @@
                 recovery_percent: 65
               },
               {type: 'break', label: t('template.block.cooldown'), minutes: 3, power: 25}
+            ]
+          },
+          // The Norwegian 4 x 4 for fitness; the pulse drop follows the last hard interval.
+          'pulse-4x4': {
+            mode: 'pulse',
+            message: t('template.message.pulse-4x4'),
+            blocks: [
+              {type: 'interval', label: t('template.block.warmup'), minutes: 5, percent: 65},
+              {
+                type: 'repeat',
+                count: 4,
+                work_seconds: 240,
+                work_percent: 90,
+                recovery_seconds: 180,
+                recovery_percent: 70
+              },
+              {type: 'recovery', seconds: 60}
             ]
           },
           'vo2max-5x5': {
