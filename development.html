@@ -364,7 +364,13 @@
         var width = 520, height = 240, left = 44, right = options.levels ? 82 : 16, top = 14, bottom = 30;
         var times = all.map(function (p) { return p.date.getTime(); });
         var first = Math.min.apply(null, times), last = Math.max.apply(null, times);
-        if (first === last) { first -= 3 * 86400000; last += 3 * 86400000; }
+        // Measurements within a few days get a week-wide axis around them, so the
+        // ticks show different dates and not the same day five times.
+        if (last - first < 6 * 86400000) {
+          var middle = (first + last) / 2;
+          first = middle - 3 * 86400000;
+          last = middle + 3 * 86400000;
+        }
         var values = all.map(function (p) { return p.value; });
         var low = Math.min.apply(null, values), high = Math.max.apply(null, values);
         var pad = Math.max((high - low) * 0.15, options.minPad || 1);
