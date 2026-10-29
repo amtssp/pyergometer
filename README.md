@@ -199,7 +199,9 @@ last 12 months or everything; the page shows:
   heartbeat, each with its change over the period, plus total training time
   and number of workouts.
 * Charts of VO2max (one line per test type, since the Åstrand and ramp tests
-  are not directly comparable), pulse drop and watt per heartbeat (every value
+  are not directly comparable; coloured bands behind it show the level from
+  very low to very high for the profile's sex and age at each test), pulse drop
+  and watt per heartbeat (every value
   over 3 months, weekly or monthly averages over longer periods; tests are
   never averaged), and training time per week, month or year.
 * A year-by-year table: workouts, time, first-to-latest VO2max for each test

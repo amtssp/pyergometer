@@ -24,6 +24,13 @@
       --series-1: #2a78d6;
       --series-2: #eb6834;
       --good-text: #006300;
+      /* Fitness levels behind the VO2max chart: very low (warm) to very high (green),
+         around a neutral middle. Always named in text beside the band. */
+      --level-1: #f8dcd7;
+      --level-2: #fcefec;
+      --level-3: #f4f3f0;
+      --level-4: #e8f4e9;
+      --level-5: #d5ecd8;
       --bad-text: #b42318;
       font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
       color: var(--ink);
@@ -99,6 +106,10 @@
     .tile .delta { margin-top: .15rem; font-size: .85rem; color: var(--muted); }
     .tile .delta.up { color: var(--good-text); }
     .tile .delta.down { color: var(--bad-text); }
+    .tile .level {
+      display: inline-block; margin-top: .35rem; padding: .05rem .5rem; border-radius: 999px;
+      font-size: .8rem; font-weight: 700; color: var(--ink);
+    }
 
     /* Charts */
     .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr)); gap: 1rem; }
@@ -187,7 +198,7 @@
     <div class="panel">
       <div class="panel-head">
         <h2 data-i18n="development.vo2max.title"></h2>
-        <p data-i18n="development.vo2max.note"></p>
+        <p id="vo2max-note" data-i18n="development.vo2max.note"></p>
       </div>
       <div class="chart-box" id="chart-vo2max"></div>
     </div>
@@ -290,6 +301,58 @@
 
       // ------------------------------------------------------------ line chart
       // series: [{name, color, points: [{date, value, note}]}]; one y-axis per chart.
+      // Fitness levels (VO2max, ml/kg/min) by sex and age. Each list holds where
+      // "low", "average", "high" and "very high" start; below the first is "very low".
+      var FITNESS_NORMS = {
+        male: [[19, [44, 49, 57, 62]], [29, [39, 44, 52, 57]], [39, [35, 40, 48, 52]],
+               [49, [31, 36, 44, 48]], [59, [26, 32, 40, 44]], [69, [22, 27, 36, 40]],
+               [Infinity, [20, 25, 33, 38]]],
+        female: [[29, [29, 35, 44, 49]], [39, [28, 34, 42, 48]], [49, [26, 32, 41, 46]],
+                 [64, [22, 29, 37, 42]], [Infinity, [20, 27, 35, 40]]]
+      };
+      var currentProfile = null;
+      var profilesByName = {};
+
+      function ageGroup(table, age) {
+        for (var index = 0; index < table.length; index += 1) {
+          if (age <= table[index][0]) return {index: index, edges: table[index][1],
+            from: index ? table[index - 1][0] + 1 : 15, to: table[index][0]};
+        }
+        return null;
+      }
+      // The levels for the profile on a given day, or null without sex and birth year.
+      function fitnessNorm(date) {
+        var profile = currentProfile;
+        if (!profile || !profile.birth_year || !FITNESS_NORMS[profile.sex]) return null;
+        var group = ageGroup(FITNESS_NORMS[profile.sex], date.getFullYear() - profile.birth_year);
+        group.sex = profile.sex;
+        return group;
+      }
+      function fitnessLevel(value, norm) {
+        return norm.edges.filter(function (edge) { return value >= edge; }).length + 1;
+      }
+      function levelName(level) {
+        return t('development.level.' + level);
+      }
+      function groupName(norm) {
+        return t('development.group.' + norm.sex + (norm.to === Infinity ? '.over' : ''),
+          {from: norm.from, to: norm.to});
+      }
+      // Periods with the same levels: the age group can change during a long period.
+      function normPeriods(first, last) {
+        var periods = [];
+        for (var year = new Date(first).getFullYear(); year <= new Date(last).getFullYear(); year += 1) {
+          var start = Math.max(first, new Date(year, 0, 1).getTime());
+          var end = Math.min(last, new Date(year + 1, 0, 1).getTime());
+          var norm = fitnessNorm(new Date(start));
+          if (!norm) return [];
+          var previous = periods[periods.length - 1];
+          if (previous && previous.norm.index === norm.index) previous.end = end;
+          else periods.push({start: start, end: end, norm: norm});
+        }
+        return periods;
+      }
+
       function lineChart(box, series, options) {
         box.textContent = '';
         var all = [];
@@ -298,14 +361,26 @@
           box.appendChild(el('div', 'chart-empty', options.empty));
           return;
         }
-        var width = 520, height = 240, left = 44, right = 16, top = 14, bottom = 30;
+        var width = 520, height = 240, left = 44, right = options.levels ? 82 : 16, top = 14, bottom = 30;
         var times = all.map(function (p) { return p.date.getTime(); });
         var first = Math.min.apply(null, times), last = Math.max.apply(null, times);
         if (first === last) { first -= 3 * 86400000; last += 3 * 86400000; }
         var values = all.map(function (p) { return p.value; });
         var low = Math.min.apply(null, values), high = Math.max.apply(null, values);
         var pad = Math.max((high - low) * 0.15, options.minPad || 1);
-        low = Math.max(0, low - pad); high = high + pad;
+        var periods = options.levels ? normPeriods(first, last) : [];
+        if (periods.length) {
+          // Show a little of the level below the lowest and above the highest value.
+          var edges = [];
+          periods.forEach(function (p) { edges = edges.concat(p.norm.edges); });
+          var below = edges.filter(function (e) { return e <= low; });
+          var above = edges.filter(function (e) { return e > high; });
+          low = below.length ? Math.max.apply(null, below) - 3 : low - pad;
+          high = above.length ? Math.min.apply(null, above) + 3 : high + pad;
+        } else {
+          low = low - pad; high = high + pad;
+        }
+        low = Math.max(0, low);
         var step = niceStep((high - low) / 4);
         low = Math.floor(low / step) * step; high = Math.ceil(high / step) * step;
         var x = function (t) { return left + (t - first) / (last - first) * (width - left - right); };
@@ -313,6 +388,22 @@
 
         var chart = svg('svg', {viewBox: '0 0 ' + width + ' ' + height, role: 'img',
           'aria-label': options.label});
+        periods.forEach(function (period, index) {
+          var bounds = [low].concat(period.norm.edges, [high]);
+          var x1 = index ? x(period.start) : left;
+          var x2 = index === periods.length - 1 ? width - right : x(period.end);
+          for (var level = 1; level <= 5; level += 1) {
+            var bandLow = Math.max(low, bounds[level - 1]), bandHigh = Math.min(high, bounds[level]);
+            if (bandHigh <= bandLow) continue;
+            chart.appendChild(svg('rect', {x: x1, y: y(bandHigh), width: x2 - x1,
+              height: y(bandLow) - y(bandHigh), fill: css('--level-' + level)}));
+            if (index === periods.length - 1 && y(bandLow) - y(bandHigh) >= 11) {
+              // The level's name in the margin, so the colour is never the only cue.
+              chart.appendChild(svg('text', {x: width - right + 6, y: (y(bandLow) + y(bandHigh)) / 2 + 4,
+                fill: css('--axis-text'), 'font-size': 11}, levelName(level)));
+            }
+          }
+        });
         for (var v = low; v <= high + step / 2; v += step) {
           chart.appendChild(svg('line', {x1: left, x2: width - right, y1: y(v), y2: y(v),
             stroke: v === low ? css('--axis') : css('--grid'), 'stroke-width': 1}));
@@ -787,10 +878,19 @@
         var fitness = astrand.concat(ramp).sort(function (a, b) { return a.date - b.date; });
         var latest = fitness[fitness.length - 1];
         var firstSame = latest && fitness.filter(function (t) { return t.test.type === latest.test.type; })[0];
-        tiles.appendChild(tile(t('development.vo2max.title'), latest ? latest.test.vo2max : null, 'ml/kg/min',
+        var vo2Tile = tile(t('development.vo2max.title'), latest ? latest.test.vo2max : null, 'ml/kg/min',
           latest ? (firstSame !== latest ? {change: latest.test.vo2max - firstSame.test.vo2max, since: since}
                                          : {text: t(latest.test.type === 'astrand' ? 'test.astrand' : 'test.ramp')}) : null,
-          true, 1));
+          true, 1);
+        var latestNorm = latest && fitnessNorm(latest.date);
+        if (latestNorm) {
+          var level = fitnessLevel(latest.test.vo2max, latestNorm);
+          var badge = el('div', 'level', levelName(level));
+          badge.style.background = css('--level-' + level);
+          badge.title = groupName(latestNorm);
+          vo2Tile.appendChild(badge);
+        }
+        tiles.appendChild(vo2Tile);
         var ramps = tests.filter(function (t) { return t.test.type === 'ramp' && t.test.ftp_watts; });
         var latestRamp = ramps[ramps.length - 1];
         tiles.appendChild(tile('FTP', latestRamp ? latestRamp.test.ftp_watts : null, 'W',
@@ -819,18 +919,22 @@
         // Charts
         var points = function (list) {
           return list.map(function (t) {
-            return {date: t.date, value: t.test.vo2max,
-              note: t.test.type === 'astrand'
-                ? I18N.t('development.note.astrand', {pulse: t.test.pulse, watts: t.test.watts})
-                : I18N.t('development.note.ramp', {watts: t.test.map_watts})};
+            var norm = fitnessNorm(t.date);
+            var note = t.test.type === 'astrand'
+              ? I18N.t('development.note.astrand', {pulse: t.test.pulse, watts: t.test.watts})
+              : I18N.t('development.note.ramp', {watts: t.test.map_watts});
+            if (norm) note += ' · ' + levelName(fitnessLevel(t.test.vo2max, norm)) + ' ' + groupName(norm);
+            return {date: t.date, value: t.test.vo2max, note: note};
           });
         };
         var vo2Series = [];
         if (astrand.length) vo2Series.push({name: t('test.astrand'), color: css('--series-1'), points: points(astrand)});
         if (ramp.length) vo2Series.push({name: t('test.ramp'), color: css(astrand.length ? '--series-2' : '--series-1'), points: points(ramp)});
         lineChart(document.getElementById('chart-vo2max'), vo2Series, {
-          unit: 'ml/kg/min', decimals: 1, minPad: 2, label: t('development.vo2max.label'),
+          unit: 'ml/kg/min', decimals: 1, minPad: 2, label: t('development.vo2max.label'), levels: true,
           empty: t('development.vo2max.empty', {period: periodText})});
+        document.getElementById('vo2max-note').textContent = t('development.vo2max.note') +
+          (fitnessNorm(new Date()) ? ' ' + t('development.vo2max.levels') : '');
         var averaged = averageUnit ? ' ' + t('development.averaged', {unit: unitName(averageUnit)}) : '';
         document.getElementById('recovery-note').textContent = t('development.recovery.note') + averaged;
         document.getElementById('efficiency-note').textContent = t('development.efficiency.note') + averaged;
@@ -911,7 +1015,8 @@
               : 'development.test.ramp');
             return [rowBox(t.session, I18N.t('development.select.row', {name: testName, date: longDate(t.date)})),
               longDate(t.date), testName, result,
-              test.vo2max ? number(test.vo2max, 1) : '–', state];
+              test.vo2max ? number(test.vo2max, 1) + (fitnessNorm(t.date)
+                ? ' · ' + levelName(fitnessLevel(test.vo2max, fitnessNorm(t.date))) : '') : '–', state];
           }));
         document.getElementById('sessions-title').textContent = t('development.sessions.title', {period: periodText});
         var shownSessions = sessions.slice().reverse();
@@ -951,6 +1056,7 @@
         document.getElementById('back-link').href = '/';
         history.replaceState(null, '', '/udvikling?profile=' + encodeURIComponent(name));
         selected = {};
+        currentProfile = profilesByName[name] || null;
         fillMoveTargets();
         fetch('/api/history?profile=' + encodeURIComponent(name)).then(function (response) {
           return response.json().then(function (data) {
@@ -969,6 +1075,8 @@
           try { wanted = window.localStorage.getItem('pyergometer-profile'); } catch (error) { wanted = null; }
         }
         profileNames = (data.profiles || []).map(function (profile) { return profile.name; });
+        profilesByName = {};
+        (data.profiles || []).forEach(function (profile) { profilesByName[profile.name] = profile; });
         (data.profiles || []).forEach(function (profile) {
           var option = el('option', '', profile.name);
           option.value = profile.name;
