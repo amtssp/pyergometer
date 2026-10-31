@@ -19,3 +19,4 @@ build/
 nohup.out
 .venv/
 training_history.json
+CLAUDE.local.md
