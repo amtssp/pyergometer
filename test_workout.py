@@ -1637,7 +1637,7 @@ class FitnessDataTests(unittest.TestCase):
         self.assertEqual((sample['pulse'], sample['recovery']), (150, True))
         self.assertEqual(controller.device.power, 25)
 
-    def test_summary_measures_pulse_drop_and_watt_per_beat(self):
+    def test_summary_measures_pulse_drop(self):
         chart = build_chart_plan({'max_pulse': 200, 'blocks': [
             {'type': 'interval', 'minutes': 5, 'percent': 70},
             {'type': 'recovery'}]})
@@ -1649,10 +1649,56 @@ class FitnessDataTests(unittest.TestCase):
 
         self.assertEqual(summary['recoveries'], [
             {'start_pulse': 140, 'end_pulse': 111, 'drop': 29, 'seconds': 60}])
-        self.assertAlmostEqual(summary['watt_per_beat'], 150 / 140.0, places=3)
+        # A single pulse interval is not one of the compared kinds of effort.
+        self.assertEqual((summary['watt_per_beat'], summary['efficiency']), (None, []))
         self.assertEqual(summary['max_pulse'], 140)
         self.assertEqual(summary['avg_power'], 150)
         self.assertEqual(summary['energy_kj'], 45.0)
+
+
+class EfficiencyTests(unittest.TestCase):
+    def test_hard_intervals_of_a_repeat_give_watt_per_beat(self):
+        chart = build_chart_plan({'max_pulse': 160, 'blocks': [
+            {'type': 'interval', 'minutes': 5, 'percent': 65},
+            {'type': 'repeat', 'count': 4, 'work_seconds': 240, 'work_percent': 90,
+             'recovery_seconds': 180, 'recovery_percent': 70},
+            {'type': 'recovery'}]})
+        samples = []
+        for block in chart['blocks']:
+            for second in range(block['start'], block['end']):
+                hard = block.get('repeat_phase') == 'work'
+                # The pulse rises during the first minute of each hard interval.
+                pulse = (144 if second - block['start'] >= 60 else 120) if hard else 110
+                samples.append({'elapsed': second, 'pulse': pulse, 'power': 160 if hard else 90})
+
+        readings = summarize_workout(samples, chart)['efficiency']
+
+        self.assertEqual(readings, [{'kind': 'interval', 'seconds': 240, 'percent': 90,
+                                     'watts': 160.0, 'pulse': 144.0, 'value': 1.111}])
+
+    def test_astrand_test_gives_watt_per_beat_at_its_load(self):
+        chart = build_chart_plan({'mode': 'power', 'blocks': [
+            {'type': 'interval', 'minutes': 3, 'power': 50},
+            {'type': 'interval', 'minutes': 6, 'power': 100, 'test': 'astrand'}]})
+        samples = [{'elapsed': second, 'pulse': 100 if second < 180 else 130,
+                    'power': 50 if second < 180 else 100} for second in range(540)]
+
+        readings = summarize_workout(samples, chart)['efficiency']
+
+        self.assertEqual(readings, [{'kind': 'astrand', 'load': 100, 'watts': 100.0,
+                                     'pulse': 130.0, 'value': 0.769}])
+        # A pulse that has not settled gives no reading.
+        for sample in samples:
+            if sample['elapsed'] >= 480:
+                sample['pulse'] = 140
+        self.assertEqual(summarize_workout(samples, chart)['efficiency'], [])
+
+    def test_a_ramp_gives_no_watt_per_beat(self):
+        chart = build_chart_plan({'mode': 'power', 'blocks': [
+            {'type': 'ramp', 'minutes': 10, 'start_power': 50, 'end_power': 250, 'test': 'ramp'}]})
+        samples = [{'elapsed': second, 'pulse': 100 + second // 10, 'power': 50 + second // 3}
+                   for second in range(600)]
+        self.assertEqual(summarize_workout(samples, chart)['efficiency'], [])
 
 
 class FitnessTestTests(unittest.TestCase):

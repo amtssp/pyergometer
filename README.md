@@ -159,7 +159,7 @@ Fitness tests
 Two shared templates measure fitness; fill in birth year, sex and weight on
 the user profile first. Results are saved in the Git-ignored
 ``training_history.json`` together with a summary of every workout (pulse,
-watt, energy, watt per heartbeat in settled pulse intervals and every
+watt, energy, watt per heartbeat (see below) and every
 "+ Pulsfald" pulse-drop block, where the rider sits still for 60 seconds).
 The drop is measured from the pulse the workout reached, so "+ Pulsfald" goes
 right after the last load: an easy ending after it (pauses, blocks named
@@ -205,7 +205,8 @@ last 12 months or everything; the page shows:
   over 3 months, weekly or monthly averages over longer periods; tests are
   never averaged), and training time per week, month or year.
 * A year-by-year table: workouts, time, first-to-latest VO2max for each test
-  type, average pulse drop and average watt per heartbeat.
+  type, average pulse drop and first-to-latest watt per heartbeat for each kind
+  of effort.
 * Tables of every fitness test (including invalid ones and the reason) and of
   every workout, newest first. Mark rows to delete them, or to move them to
   another user profile; a moved fitness test is worked out again with that
@@ -215,6 +216,12 @@ last 12 months or everything; the page shows:
 Pulse drop and watt per heartbeat only rise when fitness improves, so they show
 progress between the fitness tests without any extra effort: add a
 "+ Pulsfald" block at the end of a workout and ride pulse-controlled intervals.
+Watt per heartbeat depends more on how hard one rides than on fitness, so it is
+only measured where the same effort comes back, and each kind is its own line:
+minutes 5-6 of an Åstrand test (per load), and the last 2 minutes of hard
+intervals of at least 3 minutes in a pulse-controlled repeat, such as
+``Puls · 4 × 4 min`` (per interval length and target), counting only seconds
+within 5 beats of the target. A ramp or a mixed workout gives no reading.
 
 Supported bikes are listed in ``devices.py``: currently a Kettler on a serial
 RS-232 port and a simulation. Choose the bike type on the page under

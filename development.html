@@ -23,6 +23,8 @@
       --axis-text: #6f6d68;
       --series-1: #2a78d6;
       --series-2: #eb6834;
+      --series-3: #1baf7a;
+      --series-4: #eda100;
       --good-text: #006300;
       /* Fitness levels behind the VO2max chart: very low (warm) to very high (green),
          around a neutral middle. Always named in text beside the band. */
@@ -836,10 +838,33 @@
         });
         return list;
       }
+      // Watt per heartbeat, one list per kind of effort: kinds are never mixed.
+      function efficiencyKey(reading) {
+        return reading.kind === 'astrand' ? 'astrand-' + reading.load
+          : 'interval-' + reading.seconds + '-' + reading.percent;
+      }
+      function efficiencyName(reading) {
+        return reading.kind === 'astrand' ? t('development.efficiency.astrand', {watts: reading.load})
+          : t('development.efficiency.interval', {minutes: number(reading.seconds / 60, 1).replace(/[.,]0$/, ''),
+            percent: reading.percent});
+      }
       function efficiencyOf(sessions) {
-        return sessions.filter(function (s) { return s.watt_per_beat; }).map(function (s) {
-          return {date: s.date, value: s.watt_per_beat, note: sessionName(s)};
+        var list = [];
+        sessions.forEach(function (s) {
+          (s.efficiency || []).forEach(function (r) {
+            list.push({date: s.date, value: r.value, key: efficiencyKey(r), name: efficiencyName(r),
+              note: t('development.efficiency.reading', {watts: number(r.watts, 0), pulse: number(r.pulse, 0)}) +
+                ' · ' + sessionName(s)});
+          });
         });
+        return list;
+      }
+      function efficiencyKinds(list) {
+        var kinds = [];
+        list.forEach(function (item) {
+          if (!kinds.some(function (k) { return k.key === item.key; })) kinds.push({key: item.key, name: item.name});
+        });
+        return kinds;
       }
       // Workouts saved without a name were new, unsaved plans.
       function sessionName(session) {
@@ -912,9 +937,12 @@
         tiles.appendChild(tile(t('development.tile.recovery'), lastRecovery ? lastRecovery.value : null,
           t('development.unit.beats'),
           trend(recoveries), true));
+        // The tile follows the newest kind and compares it only with itself.
         var lastEfficiency = efficiency[efficiency.length - 1];
+        var sameKind = lastEfficiency ? efficiency.filter(function (e) { return e.key === lastEfficiency.key; }) : [];
+        var efficiencyTrend = trend(sameKind);
         tiles.appendChild(tile(t('development.efficiency.title'), lastEfficiency ? lastEfficiency.value : null, '',
-          trend(efficiency), true, 2));
+          efficiencyTrend || (lastEfficiency ? {text: lastEfficiency.name} : null), true, 2));
         var totalMinutes = sessions.reduce(function (a, s) { return a + minutes(s.seconds); }, 0);
         tiles.appendChild(tile(t('development.tile.training.' + range),
           totalMinutes >= 120 ? totalMinutes / 60 : totalMinutes,
@@ -950,9 +978,11 @@
           unit: t('development.unit.beats'), decimals: averageUnit ? 1 : 0, minPad: 3,
           label: t('development.recovery.label'),
           empty: t('development.recovery.empty', {period: periodText})});
-        var efficiencyPoints = aggregate(efficiency, averageUnit);
-        lineChart(document.getElementById('chart-efficiency'),
-          efficiencyPoints.length ? [{name: t('development.efficiency.title'), color: css('--series-1'), points: efficiencyPoints}] : [], {
+        var efficiencySeries = efficiencyKinds(efficiency).slice(0, 4).map(function (kind, index) {
+          return {name: kind.name, color: css('--series-' + (index + 1)),
+            points: aggregate(efficiency.filter(function (e) { return e.key === kind.key; }), averageUnit)};
+        });
+        lineChart(document.getElementById('chart-efficiency'), efficiencySeries, {
           unit: t('development.unit.wattPerBeat'), decimals: 2, minPad: 0.05, label: t('development.efficiency.label'),
           empty: t('development.efficiency.empty', {period: periodText})});
         document.getElementById('volume-title').textContent =
@@ -986,11 +1016,17 @@
                     ? ' → ' + number(yearTests[yearTests.length - 1].test.vo2max, 1) : '') + ' ml/kg/min'
                   : '–';
               };
-              var drop = mean(recoveriesOf(list)), perBeat = mean(efficiencyOf(list));
+              var drop = mean(recoveriesOf(list));
+              var yearEfficiency = efficiencyOf(list);
+              var perBeat = efficiencyKinds(yearEfficiency).map(function (kind) {
+                var values = yearEfficiency.filter(function (e) { return e.key === kind.key; });
+                return kind.name + ': ' + number(values[0].value, 2) + (values.length > 1
+                  ? ' → ' + number(values[values.length - 1].value, 2) : '');
+              }).join('; ');
               var yearMinutes = list.reduce(function (a, s) { return a + minutes(s.seconds); }, 0);
               return [year, list.length, t('development.hours', {value: number(yearMinutes / 60, 1)}),
                 fitnessText('astrand'), fitnessText('ramp'),
-                drop !== null ? number(drop, 1) : '–', perBeat !== null ? number(perBeat, 2) : '–'];
+                drop !== null ? number(drop, 1) : '–', perBeat || '–'];
             }));
         }
 
@@ -1044,7 +1080,7 @@
               : t('development.stopped', {name: sessionName(s)}), minutes(s.seconds) + ' min',
               s.avg_pulse || '–', s.max_pulse || '–', s.avg_power || '–',
               s.energy_kj !== undefined ? number(s.energy_kj, 0) : '–', drops || '–',
-              s.watt_per_beat ? number(s.watt_per_beat, 2) : '–'];
+              (s.efficiency || []).map(function (r) { return number(r.value, 2); }).join(', ') || '–'];
           }));
         updateSelection();
       }

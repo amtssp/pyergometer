@@ -591,10 +591,13 @@ def pulse_limit(chart_plan, enabled=True):
     return chart_plan['max_pulse'] * PULSE_LIMIT_PERCENT // 100
 
 
-# A pulse interval counts towards watt per heartbeat only after the pulse has
-# settled: skip its first minutes and use seconds within a few beats of target.
-EFFICIENCY_SETTLE_SECONDS = 120
-EFFICIENCY_MIN_BLOCK_SECONDS = 180
+# Watt per heartbeat only says something about fitness when the same kind of
+# effort is compared, so it is measured in two kinds only, each kept apart:
+# the steady minutes 5-6 of an Astrand test (fixed load), and the last minutes
+# of hard intervals of at least 3 minutes in a pulse-controlled repeat, where
+# the pulse has settled on its target.
+EFFICIENCY_MIN_INTERVAL_SECONDS = 180
+EFFICIENCY_MEASURED_SECONDS = 120
 EFFICIENCY_TOLERANCE = 5
 EFFICIENCY_MIN_SAMPLES = 60
 RECOVERY_MEASURE_SECONDS = 60
@@ -621,11 +624,13 @@ def summarize_workout(samples, chart_plan):
         'avg_power': int(round(float(sum(powers)) / len(powers))) if powers else None,
         'energy_kj': round(sum(powers) / 1000.0, 1),
         'watt_per_beat': None,
+        'efficiency': efficiency_readings(samples, chart_plan),
         'recoveries': []
     }
+    if summary['efficiency']:
+        summary['watt_per_beat'] = summary['efficiency'][0]['value']
 
     by_second = dict((sample['elapsed'], sample.get('pulse', 0)) for sample in samples)
-    steady_power = steady_pulse = steady_count = 0
     for block in chart_plan.get('blocks', []):
         if block['type'] == 'recovery':
             measured = min(RECOVERY_MEASURE_SECONDS, block['end'] - block['start'])
@@ -635,18 +640,51 @@ def summarize_workout(samples, chart_plan):
                 summary['recoveries'].append({
                     'start_pulse': first, 'end_pulse': last,
                     'drop': first - last, 'seconds': measured})
-        elif (block['type'] == 'interval' and not block.get('repeat_phase') and
-                block['end'] - block['start'] >= EFFICIENCY_MIN_BLOCK_SECONDS):
-            for sample in samples:
-                if (block['start'] + EFFICIENCY_SETTLE_SECONDS <= sample['elapsed'] < block['end'] and
-                        sample.get('pulse', 0) >= 20 and
-                        abs(sample['pulse'] - block['pulse']) <= EFFICIENCY_TOLERANCE):
-                    steady_power += sample.get('power', 0)
-                    steady_pulse += sample['pulse']
-                    steady_count += 1
-    if steady_count >= EFFICIENCY_MIN_SAMPLES and steady_pulse:
-        summary['watt_per_beat'] = round(float(steady_power) / steady_pulse, 3)
     return summary
+
+
+def efficiency_readings(samples, chart_plan):
+    """Watt per heartbeat for each kind of comparable effort in one workout.
+
+    Each reading has a 'kind' ('astrand' with its 'watts', or 'interval' with
+    its 'seconds' and 'percent'), the mean 'watts' and 'pulse' and the 'value'.
+    """
+    readings = []
+    groups = {}
+    for block in chart_plan.get('blocks', []):
+        if block.get('test') == 'astrand' and block['type'] == 'power':
+            minute5 = _steady(samples, block['start'] + 240, block['start'] + 300)
+            minute6 = _steady(samples, block['start'] + 300, block['start'] + 360)
+            if (len(minute5) >= 45 and len(minute6) >= 45 and
+                    abs(_mean([s['pulse'] for s in minute6]) -
+                        _mean([s['pulse'] for s in minute5])) <= ASTRAND_STEADY_BEATS):
+                reading = _efficiency(minute5 + minute6)
+                reading.update({'kind': 'astrand', 'load': block['power']})
+                readings.append(reading)
+        elif (block.get('repeat_phase') == 'work' and block['type'] == 'interval' and
+                block['end'] - block['start'] >= EFFICIENCY_MIN_INTERVAL_SECONDS):
+            settled = [s for s in _steady(samples, block['end'] - EFFICIENCY_MEASURED_SECONDS,
+                                          block['end'])
+                       if abs(s['pulse'] - block['pulse']) <= EFFICIENCY_TOLERANCE]
+            key = (block['end'] - block['start'], block['percent'])
+            groups.setdefault(key, []).extend(settled)
+    for (seconds, percent), settled in sorted(groups.items()):
+        if len(settled) >= EFFICIENCY_MIN_SAMPLES:
+            reading = _efficiency(settled)
+            reading.update({'kind': 'interval', 'seconds': seconds, 'percent': percent})
+            readings.append(reading)
+    return readings
+
+
+def _steady(samples, start, end):
+    return [s for s in samples if start <= s['elapsed'] < end and s.get('pulse', 0) >= 20 and
+            not s.get('limited') and not s.get('recovery')]
+
+
+def _efficiency(samples):
+    watts = float(sum(s.get('power', 0) for s in samples)) / len(samples)
+    pulse = float(sum(s['pulse'] for s in samples)) / len(samples)
+    return {'watts': round(watts, 1), 'pulse': round(pulse, 1), 'value': round(watts / pulse, 3)}
 
 
 # ---------------------------------------------------------------- fitness tests
