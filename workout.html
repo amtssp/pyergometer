@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title data-i18n="page.title">Pyergometer</title>
   <script src="/i18n.js"></script>
+  <script src="/nosleep.js"></script>
   <style>
     :root {
       color-scheme: light;
@@ -1266,19 +1267,58 @@
       }
       window.addEventListener('resize', fitChart);
 
-      // Keep a tablet or phone from dimming during a workout. Browsers only allow it on
-      // https or localhost, so on a plain http address the screen's own timeout applies.
+      // Keep a tablet or phone from dimming during a workout. The Wake Lock API only
+      // exists on https or localhost; on a plain http address (the Pi) a tiny silent
+      // video playing in a loop does the same, as in NoSleep.js.
+      var noSleepVideo = null;
+
+      function screenVideo() {
+        if (noSleepVideo || !window.NO_SLEEP_MEDIA) return noSleepVideo;
+        noSleepVideo = document.createElement('video');
+        noSleepVideo.setAttribute('playsinline', '');
+        noSleepVideo.setAttribute('title', 'No sleep');
+        ['webm', 'mp4'].forEach(function (type) {
+          var source = document.createElement('source');
+          source.src = window.NO_SLEEP_MEDIA[type];
+          source.type = 'video/' + type;
+          noSleepVideo.appendChild(source);
+        });
+        noSleepVideo.addEventListener('loadedmetadata', function () {
+          if (noSleepVideo.duration <= 1) {
+            noSleepVideo.setAttribute('loop', '');
+          } else {
+            // The mp4 is longer; keep it inside its first half second instead of ending.
+            noSleepVideo.addEventListener('timeupdate', function () {
+              if (noSleepVideo.currentTime > 0.5) noSleepVideo.currentTime = Math.random();
+            });
+          }
+        });
+        // Never added to the page: it plays unseen, like NoSleep.js does it.
+        return noSleepVideo;
+      }
+
+      // Called from the Start click as well, since a browser may only start the video
+      // in direct answer to a tap.
       function keepScreenOn() {
-        if (!navigator.wakeLock || wakeLock) return;
-        navigator.wakeLock.request('screen').then(function (lock) {
-          wakeLock = lock;
-          lock.addEventListener('release', function () { wakeLock = null; });
-        }).catch(function () {});
+        if (navigator.wakeLock) {
+          if (wakeLock) return;
+          navigator.wakeLock.request('screen').then(function (lock) {
+            wakeLock = lock;
+            lock.addEventListener('release', function () { wakeLock = null; });
+          }).catch(function () {});
+          return;
+        }
+        var video = screenVideo();
+        if (video && video.paused) {
+          var playing = video.play();
+          if (playing && playing.catch) playing.catch(function () {});
+        }
       }
 
       function releaseScreen() {
         if (wakeLock) wakeLock.release().catch(function () {});
         wakeLock = null;
+        if (noSleepVideo) noSleepVideo.pause();
       }
 
       document.addEventListener('visibilitychange', function () {
@@ -3490,6 +3530,7 @@
         }
         busy = true;
         startButton.disabled = true;
+        keepScreenOn();
         if (plan.pulse_source === 'watch') {
           watchStatus.className = 'muted';
           watchStatus.textContent = t('watch.connecting');
@@ -3512,6 +3553,7 @@
           startButton.classList.add('danger');
           refreshStatus();
         }).catch(function (error) {
+          releaseScreen();
           busy = false;
           stopping = false;
           startButton.disabled = false;

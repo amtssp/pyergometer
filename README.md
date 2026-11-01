@@ -134,8 +134,11 @@ change; then the chart, with the test guidance in small type below it. During
 the Åstrand and Ekblom-Bak tests the cadence tile turns orange with an arrow
 up or down outside 55-65 rpm, and during the ramp test below 50 rpm. The view
 stays with the result when the workout ends, until ``Tilbage til opsætning``
-is pressed. Where the browser allows it (https or localhost), the screen is
-kept on during the workout.
+is pressed. The screen is kept on during the workout: with the browser's Wake
+Lock API where it exists (https or localhost), and otherwise, as on the Pi's
+plain http address, with a tiny silent video playing unseen in a loop. The
+videos in ``nosleep.js`` come from [NoSleep.js](https://github.com/richtr/NoSleep.js)
+by Rich Tibbett (MIT licence, included in the file).
 Measurements are sampled and displayed about once per second. Use
 ``Afspil livedemo med simuleret puls`` to preview the chart without starting
 the ergometer; demo measurements are synthetic and are not saved as workout

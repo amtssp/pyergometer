@@ -1454,6 +1454,12 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             self._send(200, script, 'text/javascript; charset=utf-8')
             return
 
+        if request_path == '/nosleep.js':
+            script_path = os.path.join(os.path.dirname(__file__), 'nosleep.js')
+            with open(script_path, 'rb') as script_file:
+                self._send(200, script_file.read(), 'text/javascript; charset=utf-8')
+            return
+
         if request_path == '/udvikling':
             page_path = os.path.join(os.path.dirname(__file__), 'development.html')
             with open(page_path, 'rb') as page_file:
