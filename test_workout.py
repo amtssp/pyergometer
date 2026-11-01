@@ -1905,6 +1905,10 @@ class FitnessTestTests(unittest.TestCase):
         standard = analyze_tests(samples, heavy_start, self.profile)[0]
         one_stage = analyze_tests(self.ekblom_bak_samples(), build_chart_plan({'mode': 'power', 'blocks': [
             {'type': 'interval', 'minutes': 4, 'power': 30, 'test': 'ekblom-bak'}]}), self.profile)[0]
+        three_stages = analyze_tests(self.ekblom_bak_samples(), build_chart_plan({'mode': 'power', 'blocks': [
+            {'type': 'interval', 'minutes': 4, 'power': 30, 'test': 'ekblom-bak'},
+            {'type': 'interval', 'minutes': 4, 'power': 80, 'test': 'ekblom-bak'},
+            {'type': 'interval', 'minutes': 4, 'power': 110, 'test': 'ekblom-bak'}]}), self.profile)[0]
 
         self.assertEqual(short['problems'], [{'code': 'ekblom_bak_incomplete'}])
         self.assertEqual(flat['problems'], [{'code': 'ekblom_bak_no_rise'}])
@@ -1912,8 +1916,9 @@ class FitnessTestTests(unittest.TestCase):
         self.assertEqual(limited['problems'], [{'code': 'pulse_limited'}])
         self.assertEqual(no_profile['problems'], [{'code': 'ekblom_bak_profile_missing'}])
         self.assertEqual(standard['problems'], [{'code': 'ekblom_bak_standard_load', 'watts': 30}])
-        self.assertEqual(one_stage['problems'], [{'code': 'ekblom_bak_stages'}])
-        for result in (short, flat, limited, no_profile, standard, one_stage):
+        self.assertEqual(one_stage['problems'], [{'code': 'ekblom_bak_incomplete'}])
+        self.assertEqual(three_stages['problems'], [{'code': 'ekblom_bak_stages'}])
+        for result in (short, flat, limited, no_profile, standard, one_stage, three_stages):
             self.assertFalse(result['valid'])
 
     def test_ekblom_bak_result_is_worked_out_again_for_another_profile(self):

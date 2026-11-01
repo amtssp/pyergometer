@@ -457,6 +457,85 @@
     .mode-switch input { margin: 0; width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
     .details-body > .subsection:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 
+    /* Focus view: while a workout runs (and until its result is closed) the page shows
+       only the figures, the chart and Stop, sized to the screen so nothing scrolls. */
+    .focus-info, #focus-close, .live-tiles { display: none; }
+    body.focus {
+      display: flex;
+      flex-direction: column;
+      max-width: 1280px;
+      height: 100vh;
+      height: 100dvh;
+      padding-bottom: .75rem;
+      overflow: hidden;
+    }
+    body.focus > :not(.topbar):not(#chart-panel) { display: none !important; }
+    body.focus .topbar { position: static; flex: none; margin-bottom: .6rem; padding: .6rem 1rem; }
+    body.focus .brand, body.focus .profile-pick, body.focus #development-link { display: none; }
+    body.focus .focus-info { display: block; flex: 1 1 auto; min-width: 0; margin-right: auto; }
+    body.focus.finished #focus-close { display: inline-flex; align-items: center; }
+    #focus-name {
+      font-size: 1.2rem; font-weight: 800;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #focus-time { font-size: .9rem; font-variant-numeric: tabular-nums; }
+    body.focus #chart-panel {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      margin: 0;
+      padding: .75rem;
+    }
+    body.focus #chart-panel > .chart-head, body.focus #pulse-limit-row, body.focus #chart-message,
+    body.focus #chart-help, body.focus .chart-foot { display: none; }
+    body.focus .live-tiles {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: .6rem;
+      margin-bottom: .6rem;
+      flex: none;
+    }
+    .live-tile {
+      display: grid;
+      gap: .1rem;
+      padding: .5rem .8rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--field);
+      min-width: 0;
+    }
+    .tile-label { font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .tile-value {
+      font-size: 2.2rem; font-weight: 800; line-height: 1.1; letter-spacing: -.02em;
+      font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .tile-value small { margin-left: .3rem; font-size: .95rem; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+    .tile-heart { margin-right: .3rem; font-size: 1.5rem; vertical-align: .25rem; }
+    #tile-pulse .tile-value { color: #c62828; }
+    .tile-arrow { margin-left: .35rem; font-size: 1.6rem; }
+    .tile-sub { font-size: .85rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .live-tile.warn { background: #fff1dc; border-color: #f0c98b; }
+    .live-tile.warn .tile-value, .live-tile.warn .tile-sub { color: #8a4b00; }
+    body.focus .chart-row { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+    body.focus #pulse-chart { height: auto; min-height: 0; }
+    body.focus .adjust-buttons { align-self: center; }
+    /* The guidance moves below the chart and gets smaller while riding. */
+    body.focus #test-guide { order: 1; margin: .5rem 0 0; padding: .35rem .65rem; font-size: .82rem; flex: none; }
+    @media (max-width: 700px) {
+      body.focus { padding-left: .6rem; padding-right: .6rem; }
+      body.focus .topbar { margin-left: -.6rem; margin-right: -.6rem; }
+      body.focus .topbar-row { flex-wrap: nowrap; }
+      body.focus #start { flex: none; min-width: 0; padding: .5rem 1rem; font-size: 1rem; }
+      body.focus #focus-close { flex: none; }
+      body.focus .live-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; }
+      .live-tile { padding: .4rem .6rem; }
+      .tile-value { font-size: 1.7rem; }
+      body.focus .chart-row { flex-direction: column; }
+      body.focus .adjust-buttons { flex-direction: row; gap: 1rem; }
+      body.focus .adjust-buttons button { width: 3.25rem; height: 3.25rem; font-size: 1.8rem; }
+    }
+
     @media (max-width: 640px) {
       .brand { margin-right: 0; flex-basis: 100%; }
       .profile-pick { flex: 1 1 auto; }
@@ -482,16 +561,44 @@
           <small data-i18n="brand.subtitle"></small>
         </div>
       </div>
+      <div class="focus-info">
+        <div id="focus-name"></div>
+        <div id="focus-time" class="muted"></div>
+      </div>
       <label class="profile-pick" for="user-profile"><span data-i18n="top.user"></span>
         <select id="user-profile"></select>
       </label>
       <a id="development-link" class="nav-link" href="/udvikling" data-i18n="top.development"></a>
+      <button id="focus-close" class="ghost" type="button" data-i18n="focus.close"></button>
       <button id="start" class="primary" type="button" data-i18n="start.start"></button>
     </div>
     <div id="status" role="status" aria-live="polite"></div>
   </header>
 
-  <section class="panel" aria-labelledby="chart-title">
+  <section class="panel" id="chart-panel" aria-labelledby="chart-title">
+    <!-- Shown instead of the heart while a workout runs: the figures to ride by. -->
+    <div class="live-tiles" aria-live="off">
+      <div class="live-tile" id="tile-pulse">
+        <span class="tile-label" data-i18n="tile.pulse"></span>
+        <span class="tile-value"><span class="tile-heart" aria-hidden="true">&#9829;</span><span id="tile-pulse-value">--</span><small>bpm</small></span>
+        <span id="tile-pulse-sub" class="tile-sub"></span>
+      </div>
+      <div class="live-tile" id="tile-power">
+        <span class="tile-label" data-i18n="tile.power"></span>
+        <span class="tile-value"><span id="tile-power-value">--</span><small>W</small></span>
+        <span id="tile-power-sub" class="tile-sub"></span>
+      </div>
+      <div class="live-tile" id="tile-cadence">
+        <span class="tile-label" data-i18n="tile.cadence"></span>
+        <span class="tile-value"><span id="tile-cadence-value">--</span><small>rpm</small><span id="tile-cadence-arrow" class="tile-arrow" aria-hidden="true"></span></span>
+        <span id="tile-cadence-sub" class="tile-sub"></span>
+      </div>
+      <div class="live-tile" id="tile-next">
+        <span class="tile-label" data-i18n="tile.next"></span>
+        <span class="tile-value"><span id="tile-next-value">--</span></span>
+        <span id="tile-next-sub" class="tile-sub"></span>
+      </div>
+    </div>
     <div class="panel-head chart-head">
       <div>
         <h2 id="chart-title" data-i18n="chart.title.pulse"></h2>
@@ -760,6 +867,10 @@
       var workoutMode = 'pulse';
       var pulseLimitBox = document.getElementById('pulse-limit');
       var chartGeometry = {left: 70, plotWidth: 805, plotHeight: 316};
+      var chartHeight = 400;
+      // The focus view stays after a workout ends, until its result is closed.
+      var focusView = false;
+      var wakeLock = null;
       var targetUpButton = document.getElementById('target-up');
       var targetDownButton = document.getElementById('target-down');
       var workoutNameElement = document.getElementById('workout-name');
@@ -994,6 +1105,7 @@
         var last = points.length ? points[points.length - 1] : null;
         pulseBadge.classList.toggle('live', live);
         updateCadence(data);
+        updateLiveTiles(data);
         pulseBadge.classList.toggle('idle', !live);
         pulseNow.textContent = live ? last.pulse : '--';
         pulseBadge.setAttribute('aria-label', live
@@ -1023,6 +1135,163 @@
         cadence.textContent = typeof data.rpm === 'number'
           ? t('cadence.value', {rpm: data.rpm}) : t('cadence.none');
       }
+
+      // The cadence a fitness test is made for; outside it an arrow tells which way to go.
+      var TEST_CADENCE = {
+        'astrand': {low: 55, high: 65},
+        'ekblom-bak': {low: 55, high: 65},
+        'ramp': {low: 50, high: null}
+      };
+
+      function blockAt(plan, elapsed) {
+        return ((plan && plan.blocks) || []).filter(function (item) {
+          return elapsed >= item.start && elapsed < item.end;
+        })[0] || null;
+      }
+
+      // The level a block asks for, to tell whether the next one is harder or easier.
+      function blockLevel(block) {
+        if (block.type === 'interval') return block.pulse;
+        if (block.type === 'ramp') return block.start_value;
+        return block.power;
+      }
+
+      function updateLiveTiles(data) {
+        if (!focusView || !data) return;
+        var points = data && data.mode === 'real' ? data.points || [] : [];
+        var last = points.length ? points[points.length - 1] : null;
+        var plan = data && data.plan;
+        var elapsed = last ? last.elapsed : (data && data.elapsed) || 0;
+        var block = data && data.active ? blockAt(plan, elapsed) : null;
+        var setTile = function (name, value, sub, warn) {
+          document.getElementById('tile-' + name + '-value').textContent = value;
+          document.getElementById('tile-' + name + '-sub').textContent = sub || '';
+          document.getElementById('tile-' + name).classList.toggle('warn', Boolean(warn));
+        };
+
+        var pulseSub = '';
+        if (data && data.limited) {
+          pulseSub = t('pulse.limited');
+        } else if (block && (block.type === 'recovery' || block.type === 'interval' ||
+                             (block.type === 'ramp' && block.kind === 'pulse'))) {
+          pulseSub = currentBlockTarget(block, elapsed, plan);
+        }
+        setTile('pulse', last && data.active ? last.pulse : '--', pulseSub, data && data.limited);
+
+        var powerSub = '';
+        if (block && block.type !== 'recovery') {
+          powerSub = plan.mode === 'power' ? currentBlockTarget(block, elapsed, plan) : t('tile.power.byPulse');
+        }
+        setTile('power', typeof data.power === 'number' ? data.power : '--', powerSub);
+
+        var rpm = typeof data.rpm === 'number' ? data.rpm : null;
+        var wanted = block && block.type !== 'recovery' ? TEST_CADENCE[block.test] : null;
+        var arrow = '';
+        var cadenceSub = '';
+        if (wanted) {
+          if (rpm !== null && rpm < wanted.low) {
+            arrow = '▲';
+            cadenceSub = t('tile.cadence.faster');
+          } else if (rpm !== null && wanted.high && rpm > wanted.high) {
+            arrow = '▼';
+            cadenceSub = t('tile.cadence.slower');
+          } else {
+            cadenceSub = wanted.high ? t('tile.cadence.range', {low: wanted.low, high: wanted.high})
+              : t('tile.cadence.atLeast', {low: wanted.low});
+          }
+        }
+        setTile('cadence', rpm !== null ? rpm : '--', cadenceSub, arrow !== '');
+        document.getElementById('tile-cadence-arrow').textContent = arrow;
+
+        var next = null;
+        if (data && data.active && plan) {
+          next = plan.blocks.filter(function (item) { return item.start > elapsed; })[0] || null;
+        }
+        var nextSub = '';
+        if (!data || !data.active || !plan) {
+          setTile('next', '--', '');
+        } else if (!next) {
+          setTile('next', clock(Math.max(0, plan.duration - elapsed)), t('tile.next.end'));
+        } else {
+          if (next.type === 'recovery') {
+            nextSub = t('tile.next.recovery');
+          } else if (block && block.type !== 'recovery' && blockLevel(next) > blockLevel(block)) {
+            nextSub = t('tile.next.harder');
+          } else if (block && block.type !== 'recovery' && blockLevel(next) < blockLevel(block)) {
+            nextSub = t('tile.next.easier');
+          } else {
+            nextSub = t('tile.next.change');
+          }
+          setTile('next', clock(next.start - elapsed), nextSub);
+        }
+
+        document.getElementById('focus-name').textContent =
+          (plan && plan.name) || workoutNameElement.textContent;
+        document.getElementById('focus-time').textContent = plan
+          ? t('focus.time', {elapsed: clock(Math.min(elapsed, plan.duration)),
+                             left: clock(Math.max(0, plan.duration - elapsed))})
+          : '';
+      }
+
+      // Enter or leave the focus view; the chart then takes the shape of its new space.
+      function setFocusView(on) {
+        if (focusView === on) return;
+        focusView = on;
+        document.body.classList.toggle('focus', on);
+        if (on) {
+          window.scrollTo(0, 0);
+          keepScreenOn();
+        } else {
+          document.body.classList.remove('finished');
+          releaseScreen();
+        }
+        fitChart();
+        updateLiveTiles(latestChart);
+      }
+
+      function fitChart() {
+        var wanted = 400;
+        if (focusView) {
+          var box = pulseChart.parentNode.getBoundingClientRect();
+          var width = pulseChart.getBoundingClientRect().width;
+          if (box.height > 0 && width > 0) {
+            // On a narrow phone a very tall chart would shrink its text; it is centred instead.
+            wanted = Math.max(260, Math.min(620, Math.round(900 * box.height / width)));
+          }
+        }
+        if (Math.abs(wanted - chartHeight) > 2) {
+          chartHeight = wanted;
+          renderChart(latestChart);
+        }
+      }
+      window.addEventListener('resize', fitChart);
+
+      // Keep a tablet or phone from dimming during a workout. Browsers only allow it on
+      // https or localhost, so on a plain http address the screen's own timeout applies.
+      function keepScreenOn() {
+        if (!navigator.wakeLock || wakeLock) return;
+        navigator.wakeLock.request('screen').then(function (lock) {
+          wakeLock = lock;
+          lock.addEventListener('release', function () { wakeLock = null; });
+        }).catch(function () {});
+      }
+
+      function releaseScreen() {
+        if (wakeLock) wakeLock.release().catch(function () {});
+        wakeLock = null;
+      }
+
+      document.addEventListener('visibilitychange', function () {
+        // A wake lock ends when the page is hidden; take it again when it is shown.
+        if (focusView && !document.body.classList.contains('finished') &&
+            document.visibilityState === 'visible') {
+          keepScreenOn();
+        }
+      });
+
+      document.getElementById('focus-close').addEventListener('click', function () {
+        setFocusView(false);
+      });
 
       function makeField(labelText, type, value, min, max, step, className) {
         var label = document.createElement('label');
@@ -1513,12 +1782,14 @@
           t(powerMode ? 'chart.title.power' : 'chart.title.pulse');
         chartHelp.textContent = t(powerMode ? 'chart.help.power' : 'chart.help.pulse');
         var width = 900;
-        var height = 400;
+        // The focus view gives the chart the screen's shape; otherwise it is 900 x 400.
+        var height = chartHeight;
+        pulseChart.setAttribute('viewBox', '0 0 900 ' + height);
         var left = 70;
         // A watt chart needs room on the right for the pulse axis.
         var right = powerMode ? 835 : 875;
         var top = 24;
-        var bottom = 340;
+        var bottom = height - 60;
         var plotWidth = right - left;
         var plotHeight = bottom - top;
         chartGeometry = {left: left, plotWidth: plotWidth, plotHeight: plotHeight};
@@ -1754,10 +2025,10 @@
 
       function chartPosition(event) {
         var bounds = pulseChart.getBoundingClientRect();
-        var scale = Math.min(bounds.width / 900, bounds.height / 400);
+        var scale = Math.min(bounds.width / 900, bounds.height / chartHeight);
         return {
           x: (event.clientX - bounds.left - (bounds.width - 900 * scale) / 2) / scale,
-          y: (event.clientY - bounds.top) / bounds.height * 400
+          y: (event.clientY - bounds.top) / bounds.height * chartHeight
         };
       }
 
@@ -1896,12 +2167,18 @@
         }).then(function (data) {
           if (revision === chartRevision) {
             latestChart = data;
+            fitChart();
             renderChart(data);
             updatePulseBadge(data);
             updateTestGuide(data);
             updateAdjustButtons();
             updateWorkoutName();
             updateDemoButton();
+            if (busy && canStop && !stopping) {
+              // Where Stop leads changes with the chart's time, not only with the status.
+              startButton.textContent = t(stopGoesToRecovery() ? 'start.stopToRecovery'
+                : inRecovery() ? 'start.stopNow' : 'start.stop');
+            }
           }
         }).catch(function (error) {
           chartMessage.textContent = error.message;
@@ -2765,9 +3042,18 @@
           canStop = data.can_stop === true;
           startButton.disabled = starting || stopping || (busy && !canStop);
           document.body.classList.toggle('workout-running', data.running);
+          if (data.running) {
+            document.body.classList.remove('finished');
+            setFocusView(true);
+          } else if (focusView && !document.body.classList.contains('finished')) {
+            // The result stays on screen until "Back to setup" is pressed.
+            document.body.classList.add('finished');
+            releaseScreen();
+          }
           startButton.textContent = t(starting ? 'start.connecting'
             : stopping ? 'start.stopping'
-              : busy ? canStop ? (stopGoesToRecovery() ? 'start.stopToRecovery' : 'start.stop')
+              : busy ? canStop ? (stopGoesToRecovery() ? 'start.stopToRecovery'
+                : inRecovery() ? 'start.stopNow' : 'start.stop')
                 : 'start.needsRestart'
                 : 'start.start');
           startButton.classList.toggle('danger', data.running && canStop);
@@ -3126,6 +3412,14 @@
         });
       }
 
+      // During the pulse drop, Stop ends the workout at once.
+      function inRecovery() {
+        var chart = latestChart;
+        if (!chart || !chart.plan || chart.mode !== 'real') return false;
+        var block = blockAt(chart.plan, chart.elapsed);
+        return Boolean(block && block.type === 'recovery');
+      }
+
       startButton.addEventListener('click', function () {
         if (busy) {
           if (stopping) return;
@@ -3148,7 +3442,7 @@
               // The workout goes on with its pulse drop; the next press stops it.
               stopping = false;
               startButton.disabled = false;
-              startButton.textContent = t('start.stop');
+              startButton.textContent = t('start.stopNow');
               status.textContent = t('status.skippingToRecovery');
             } else {
               status.textContent = t('status.stopSent');

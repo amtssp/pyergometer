@@ -846,7 +846,8 @@ def analyze_ekblom_bak(samples, blocks, profile):
     """Fitness (VO2max) from the pulse at the end of two 4-minute loads."""
     result = {'type': 'ekblom-bak', 'valid': False, 'problems': []}
     if len(blocks) != 2:
-        result['problems'].append({'code': 'ekblom_bak_stages'})
+        # One stage left means Stop jumped past the second to the pulse drop.
+        result['problems'].append({'code': 'ekblom_bak_stages' if len(blocks) > 2 else 'ekblom_bak_incomplete'})
         return result
     stages = []
     for block in blocks:
@@ -1152,6 +1153,7 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         self.chart_limited = False
         self.chart_rpm = None
         self.chart_rpm_at = None
+        self.chart_power = None
         # Seconds at which the running workout jumped to its pulse drop, in order.
         self.chart_skips = []
         self.skip_requested = False
@@ -1355,6 +1357,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             mode = 'demo'
             active = elapsed < self.server.chart_plan['duration']
             rpm = self.server.demo_rpm if active else None
+            power = None
         elif self.server.chart_live_path:
             points = self.server.chart_points
             elapsed = 0
@@ -1375,6 +1378,8 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
                         if isinstance(sample.get('rpm'), (int, float)):
                             self.server.chart_rpm = int(sample['rpm'])
                             self.server.chart_rpm_at = _utcnow()
+                        if isinstance(sample.get('power'), (int, float)):
+                            self.server.chart_power = int(sample['power'])
                         points.append({
                             'elapsed': int(sample['elapsed']),
                             'pulse': int(sample['pulse'])
@@ -1391,12 +1396,15 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             fresh = (rpm_at is not None and
                      (_utcnow() - rpm_at).total_seconds() <= CADENCE_MAX_AGE)
             rpm = self.server.chart_rpm if active and fresh else None
+            # The load the bike reports, read at the same time as the cadence.
+            power = self.server.chart_power if active and fresh else None
         else:
             points = []
             elapsed = 0
             mode = 'preview'
             active = False
             rpm = None
+            power = None
 
         self._send_json(200, {
             'plan': self.server.chart_plan,
@@ -1405,6 +1413,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             'mode': mode,
             'active': active,
             'rpm': rpm,
+            'power': power,
             'limited': mode == 'real' and active and self.server.chart_limited
             })
 
@@ -1943,6 +1952,7 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         self.server.chart_limited = False
         self.server.chart_rpm = None
         self.server.chart_rpm_at = None
+        self.server.chart_power = None
         self.server.chart_skips = []
         self.server.skip_requested = False
         self.server.workout_profile = profile

@@ -125,6 +125,17 @@ changes to the ergometer immediately; the new target is used at the next
 one-second control update, and a shortened workout ends at its updated finish
 time. The start button changes to a red ``Stop træning`` button while active;
 stopping sends a controlled command and reduces the ergometer load to 25 W.
+
+While a workout runs, the page switches to a focus view that fits the screen
+without scrolling: the workout name, elapsed and remaining time and the red
+Stop button at the top; four tiles with the pulse (and its target), the load
+the bike reports (and the planned one), the cadence and the time to the next
+change; then the chart, with the test guidance in small type below it. During
+the Åstrand and Ekblom-Bak tests the cadence tile turns orange with an arrow
+up or down outside 55-65 rpm, and during the ramp test below 50 rpm. The view
+stays with the result when the workout ends, until ``Tilbage til opsætning``
+is pressed. Where the browser allows it (https or localhost), the screen is
+kept on during the workout.
 Measurements are sampled and displayed about once per second. Use
 ``Afspil livedemo med simuleret puls`` to preview the chart without starting
 the ergometer; demo measurements are synthetic and are not saved as workout
@@ -216,9 +227,9 @@ it leaves out its last easy interval.
   stays under 15 rpm for 5 seconds.
 
 In every workout with a pulse drop still to come, Stop (shown as
-"Stop → pulsfald") jumps straight to it: the running block ends, the blocks
+"Stop · mål pulsfald") jumps straight to it: the running block ends, the blocks
 before the pulse drop are left out and the workout ends after it. Pressing Stop
-during the pulse drop ends the workout at once.
+(then shown as "Stop helt") during the pulse drop ends the workout at once.
 
 Following progress
 ------------------
