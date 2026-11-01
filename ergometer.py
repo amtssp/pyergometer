@@ -7,6 +7,7 @@ import time
 
 from bleheartrate import read_shared_json
 from liveplan import skip_to_recovery
+from pulsemodel import SteadyWindow, estimate_watts, merge_points, valid_points
 
 
 # Above the pulse limit a watt step is lowered by this much per second, and raised
@@ -22,7 +23,21 @@ EXHAUSTED_SECONDS = 5
 
 # Pulse control: watts changed per second for a pulse this many beats from target.
 # Far from target the load moves fast; close to it slowly, as the pulse lags behind.
-PULSE_CONTROL_STEPS = ((20, 1.0), (10, 0.5), (5, 0.15), (0, 0.03))
+PULSE_CONTROL_STEPS = ((20, 2.0), (10, 0.75), (5, 0.15), (0, 0.03))
+
+# When the pulse target changes by this much, the load jumps to the one expected to
+# hold the new target (from the rider's steady points) and stays there while the pulse
+# travels, until it is within HOLD_BEATS of the target or HOLD_SECONDS have passed.
+PHASE_CHANGE_BEATS = 8
+HOLD_BEATS = 10
+HOLD_SECONDS = 90
+# Going up, the load starts above the expected one so the lagging pulse rises sooner;
+# going down, below it so the rider gets the rest at once.
+RISE_EXTRA = 0.15
+RISE_EXTRA_MAX_WATTS = 30
+FALL_SHARE = 0.75
+# A target far from every point is a guess, so the load only moves part of the way.
+GUESS_SHARE = 0.75
 
 
 class Ergometer:
@@ -44,6 +59,11 @@ class Ergometer:
         self.live_plan = None
         self.skipped_at = None
         self.low_cadence_seconds = 0
+        # Steady points (pulse, watts) from earlier workouts and from this one.
+        self.pulse_points = []
+        self.steady_window = SteadyWindow()
+        self.last_target = None
+        self.hold = None
 
         if log:
             self.logtemp = tempfile.NamedTemporaryFile(mode='w', delete=False)
@@ -158,17 +178,21 @@ class Ergometer:
                 int(self.device.power), int(self.device.rpm)))
             self.logtemp.flush()
 
+        sample = {
+            'elapsed': elapsed,
+            'pulse': int(self.device.pulse),
+            'target_pulse': int(step['pulse']),
+            'target_power': int(step['power']),
+            'rpm': int(self.device.rpm),
+            'power': int(self.device.power),
+            'limited': self.limit_reduction > 0,
+            'recovery': recovery
+        }
+        if not self.heart_rate_file or self.heart_rate_fresh:
+            point = self.steady_window.add(sample)
+            if point:
+                self.pulse_points = merge_points(self.pulse_points, [point])
         if self.live_log_file:
-            sample = {
-                'elapsed': elapsed,
-                'pulse': int(self.device.pulse),
-                'target_pulse': int(step['pulse']),
-                'target_power': int(step['power']),
-                'rpm': int(self.device.rpm),
-                'power': int(self.device.power),
-                'limited': self.limit_reduction > 0,
-                'recovery': recovery
-            }
             if self.skipped_at is not None:
                 # Tells the workout page to move its pulse drop forward the same way.
                 sample['skipped_to_recovery'] = self.skipped_at
@@ -177,6 +201,9 @@ class Ergometer:
             self.live_log_file.flush()
 
         self.pc = elapsed + 1
+        if recovery or step['pulse'] <= 0.0:
+            self.last_target = None
+            self.hold = None
         if recovery:
             self.device.set_power(absolute=step['power'])
             return
@@ -188,7 +215,21 @@ class Ergometer:
             return
 
         if step['pulse'] > 0.0:
-            difference = step['pulse'] - self.device.pulse
+            target = step['pulse']
+            if self.last_target is None or abs(target - self.last_target) >= PHASE_CHANGE_BEATS:
+                self.start_phase(elapsed, target, first=self.last_target is None)
+            self.last_target = target
+            if self.hold:
+                if abs(target - self.device.pulse) > HOLD_BEATS and elapsed < self.hold['until']:
+                    return
+                settle = self.hold['settle']
+                self.hold = None
+                if settle is not None:
+                    # The extra load has done its job; go on from the expected one.
+                    self.device.set_power(absolute=settle)
+                    return
+
+            difference = target - self.device.pulse
             if -5.0 <= difference <= 0:
                 return
 
@@ -201,6 +242,33 @@ class Ergometer:
 
             self.device.set_power(
                 relative=relative_change if difference > 0 else -relative_change)
+
+    def start_phase(self, elapsed, target, first=False):
+        """Jump to the load expected to hold a new pulse target, if the rider's points tell it."""
+        self.hold = None
+        expected, known = estimate_watts(self.pulse_points, target)
+        if expected is None:
+            return  # a new rider: the load is found by control alone
+        current = float(self.device.power)
+        if not known:
+            expected = current + GUESS_SHARE * (expected - current)
+        pulse = self.device.pulse
+        wanted = expected
+        settle = None
+        if target - pulse > HOLD_BEATS:
+            if known and not first:
+                wanted = expected + min(expected * RISE_EXTRA, RISE_EXTRA_MAX_WATTS)
+                settle = expected
+            wanted = max(wanted, current)
+        elif pulse - target > HOLD_BEATS:
+            wanted = min(expected * FALL_SHARE, current)
+        else:
+            self.device.set_power(absolute=expected)
+            return
+        self.device.set_power(absolute=wanted)
+        self.hold = {'until': elapsed + HOLD_SECONDS, 'settle': settle}
+        sys.stderr.write('\nNew pulse target %d: load %d W (expected %d W%s)\n' % (
+            target, wanted, expected, '' if known else ', a guess'))
 
     def jump_to_recovery(self, elapsed):
         plan = skip_to_recovery(self.live_plan, elapsed) if self.live_plan else None
@@ -249,6 +317,10 @@ class Ergometer:
                 plan = json.loads(line)
                 if isinstance(plan, dict) and plan.get('stop') is True:
                     self.stop_requested = True
+                elif isinstance(plan, dict) and 'pulse_points' in plan:
+                    # What earlier workouts learned; points from this one win.
+                    self.pulse_points = merge_points(valid_points(plan['pulse_points']),
+                                                     self.pulse_points)
                 elif isinstance(plan, dict) and plan.get('skip_to_recovery') is True:
                     # Stop with a pulse drop still to come jumps to it; otherwise it stops.
                     if not hasattr(self, 'begin') or not self.jump_to_recovery(

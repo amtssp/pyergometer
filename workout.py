@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 from bleheartrate import HeartRateMonitor, scan_heart_rate_devices
 from liveplan import skip_to_recovery, RECOVERY_POWER, ramp_value, session_steps
 from devices import DEFAULT_DEVICE_TYPE, device_type, device_type_ids, public_device_types
+from pulsemodel import merge_points, steady_points, valid_points
 try:
     from urllib.parse import parse_qs, urlparse
 except ImportError:
@@ -949,6 +950,55 @@ def append_history(path, session):
     write_history(path, sessions)
 
 
+# Pulse control starts from the steady points (which load held which pulse) of the
+# rider's workouts in this many days; older ones may no longer fit their fitness.
+PULSE_POINTS_DAYS = 120
+
+
+def profile_pulse_points(sessions, profile_name, now=None):
+    """The rider's steady points from recent workouts, newer ones winning."""
+    now = now or datetime.datetime.now()
+    since = (now - datetime.timedelta(days=PULSE_POINTS_DAYS)).isoformat()
+    points = []
+    for session in sorted((s for s in sessions if s.get('profile') == profile_name and
+                           isinstance(s.get('pulse_points'), list) and
+                           s.get('started', '') >= since),
+                          key=lambda s: s['started']):
+        points = merge_points(points, valid_points(session['pulse_points']))
+    return points
+
+
+def log_pulse_points(path):
+    """Steady points from a saved workout log (one step per controlled second)."""
+    with open(path, 'rb') as log_file:
+        steps = json.loads(log_file.read().decode('utf-8')).get('steps', [])
+    samples = [{'elapsed': second, 'pulse': int(step['pulse']), 'power': int(step['power']),
+                'rpm': int(step['rpm'])} for second, step in enumerate(steps)]
+    if len(set(sample['pulse'] for sample in samples)) <= 1:
+        return []  # a simulated workout has a fixed pulse and teaches nothing
+    return steady_points(samples)
+
+
+def backfill_pulse_points(history_path, data_directory):
+    """Give workouts saved before steady points existed their points from their logs."""
+    sessions = read_history(history_path)
+    changed = False
+    for session in sessions:
+        if 'pulse_points' in session:
+            continue
+        path = os.path.join(data_directory, session.get('log') or '')
+        points = []
+        if session.get('log') and os.path.isfile(path):
+            try:
+                points = log_pulse_points(path)
+            except (IOError, OSError, ValueError, KeyError, TypeError, AttributeError):
+                points = []
+        session['pulse_points'] = points
+        changed = True
+    if changed:
+        write_history(history_path, sessions)
+
+
 def change_history(path, profile_name, started, target=None):
     """Delete a profile's sessions, chosen by start time, or move them to the target profile.
 
@@ -1089,6 +1139,7 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
         self.profiles_file = os.path.join(os.path.dirname(__file__), 'user_profiles.json')
         self.history_file = os.path.join(os.path.dirname(__file__), 'training_history.json')
         self.workout_profile = None
+        self.workout_simulated = False
         self.workout_started = None
         self.last_tests = []
         self.chart_plan = None
@@ -1238,6 +1289,8 @@ class WorkoutServer(ThreadingMixIn, HTTPServer):
                 'log': os.path.basename(self.log_json) if self.log_json else None
             }
             session.update(summarize_workout(samples, self.chart_plan))
+            # A simulated bike has a made-up pulse, so it teaches pulse control nothing.
+            session['pulse_points'] = [] if self.workout_simulated else steady_points(samples)
             profile = next((item for item in read_profiles(self.profiles_file, self.presets_file)
                             if item['name'] == self.workout_profile), None)
             session['tests'] = analyze_tests(samples, self.chart_plan, profile)
@@ -1785,10 +1838,21 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
             os.remove(temporary.name)
             self._send_json(500, {'error': 'Could not create live pulse log: %s' % error})
             return
+        profile = request.get('profile')
+        profile = profile.strip() if isinstance(profile, text_types) else None
+        pulse_points = []
+        if profile and chart_plan['mode'] == 'pulse':
+            try:
+                pulse_points = profile_pulse_points(read_history(self.server.history_file), profile)
+            except (IOError, OSError, ValueError) as error:
+                sys.stderr.write('Could not read earlier steady points: %s\n' % error)
         try:
-            # The controller starts from the chart plan, which knows where a test runs.
+            # The controller starts from the chart plan, which knows where a test runs,
+            # and from what earlier workouts taught about which load holds which pulse.
             with open(live_control_path, 'wb') as control_file:
                 control_file.write(json.dumps(chart_plan).encode('utf-8') + b'\n')
+                if pulse_points:
+                    control_file.write(json.dumps({'pulse_points': pulse_points}).encode('utf-8') + b'\n')
         except IOError as error:
             os.remove(temporary.name)
             os.remove(live_log_path)
@@ -1881,8 +1945,8 @@ class WorkoutRequestHandler(BaseHTTPRequestHandler):
         self.server.chart_rpm_at = None
         self.server.chart_skips = []
         self.server.skip_requested = False
-        profile = request.get('profile')
-        self.server.workout_profile = profile.strip() if isinstance(profile, text_types) else None
+        self.server.workout_profile = profile
+        self.server.workout_simulated = selected_type['id'] == 'simulator'
         self.server.workout_started = datetime.datetime.now().replace(microsecond=0).isoformat()
         self.server.last_tests = []
         self.server.chart_live_path = live_log_path
@@ -1924,6 +1988,10 @@ def run_trainer(device=None, simulate=False, host='127.0.0.1', port=8765, open_b
                 device_type=None):
     server = WorkoutServer((host, port), device=device, simulate=simulate,
                            device_type=device_type)
+    try:
+        backfill_pulse_points(server.history_file, os.path.join(os.path.dirname(__file__), 'data'))
+    except (IOError, OSError, ValueError) as error:
+        sys.stderr.write('Could not add steady points to earlier workouts: %s\n' % error)
     port = server.server_address[1]
     url = 'http://127.0.0.1:%d/' % port
     print('Workout builder: %s' % url)

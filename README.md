@@ -153,10 +153,33 @@ automatically while the pulse is at or above 95 % of it. Both kinds support
 steady steps, ramps that change linearly over their duration, and repeat
 groups. The heart above the chart always shows the measured pulse.
 
+Pulse control learns which load holds which pulse for each user. Every minute
+where both the pulse and the load stay nearly the same (after the load has
+already stayed put for half a minute) is saved with the workout as a steady
+point. A pulse workout starts from the points of the user's last 120 days, and
+adds the points from its own warm-up and intervals as it goes. When the target
+changes, the load jumps straight to the load expected to hold the new target:
+
+* Going up, it starts 15 % (at most 30 W) above it, so the lagging pulse rises
+  sooner, and settles on the expected load 10 beats before the target.
+* Going down, it drops to three quarters of it at once, so the rest starts
+  right away.
+* Far from every known point (more than 10 beats away), the load is a guess
+  from the slope of the points, and only moves three quarters of the way and
+  without the extra 15 %.
+
+The load then stays put while the pulse travels (at most 90 seconds), after
+which ordinary pulse control fine-tunes it by up to 2 W per second. A new user
+has no points, so the first warm-up is found by pulse control alone; from then
+on its steady minute is used. Two points that disagree (a higher pulse at a
+clearly lower load, as when a pulse reading hangs) cannot both be right, so the
+older one is dropped. Simulated workouts teach nothing. Workouts saved before
+this existed get their points from their logs when the server starts.
+
 Fitness tests
 -------------
 
-Two shared templates measure fitness; fill in birth year, sex and weight on
+Three shared templates measure fitness; fill in birth year, sex and weight on
 the user profile first. Results are saved in the Git-ignored
 ``training_history.json`` together with a summary of every workout (pulse,
 watt, energy, watt per heartbeat (see below) and every

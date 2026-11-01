@@ -24,6 +24,9 @@ from workout import (
     analyze_tests,
     ekblom_bak_vo2max_litres,
     append_history,
+    backfill_pulse_points,
+    profile_pulse_points,
+    write_history,
     change_history,
     read_history,
     rescore_test,
@@ -46,6 +49,7 @@ from workout import (
     read_languages
 )
 from liveplan import session_steps, skip_to_recovery
+from pulsemodel import estimate_watts, merge_points, steady_points
 from bleheartrate import (
     HeartRateMonitor,
     _HeartRateWorker,
@@ -1513,7 +1517,91 @@ class WattWorkoutTests(unittest.TestCase):
             controller.control_step(0)
             changes.extend(controller.device.changes)
         # 50, 15, 7 and 3 beats below the target.
-        self.assertEqual(changes, [1.0, 0.5, 0.15, 0.03])
+        self.assertEqual(changes, [2.0, 0.75, 0.15, 0.03])
+
+    def phase_controller(self, points, targets, pulse=110, power=100):
+        class Device(object):
+            rpm = 70
+
+            def __init__(self):
+                self.pulse = pulse
+                self.power = power
+                self.loads = []
+
+            def status(self):
+                pass
+
+            def set_power(self, absolute=0.0, relative=0.0):
+                self.power = absolute if absolute > 0 else self.power + relative
+                self.loads.append(self.power)
+
+        class Session(object):
+            def step(self, second):
+                return {'time': second, 'power': 0, 'pulse': targets(second)}
+
+        controller = Ergometer(device=Device(), session=Session())
+        controller.pulse_points = points
+        return controller
+
+    def test_new_rider_finds_the_load_by_control_alone(self):
+        controller = self.phase_controller([], lambda second: 145)
+        controller.control_step(0)
+        self.assertEqual(controller.device.loads, [102.0])
+        self.assertIsNone(controller.hold)
+
+    def test_known_target_jumps_with_extra_load_and_settles_near_the_target(self):
+        points = [{'pulse': 114.0, 'watts': 70.0}, {'pulse': 145.0, 'watts': 150.0}]
+        controller = self.phase_controller(points, lambda second: 113 if second < 10 else 145, pulse=115)
+        controller.control_step(0)
+        controller.device.loads = []
+
+        controller.control_step(10)       # the hard interval starts: 150 W + 15 %, at most +30 W
+        controller.control_step(11)       # the pulse is still far below: the load is held
+        controller.device.pulse = 136
+        controller.control_step(12)       # within 10 beats: back to the expected load
+
+        self.assertEqual(controller.device.loads, [172.5, 150.0])
+
+    def test_rest_drops_the_load_at_once(self):
+        points = [{'pulse': 114.0, 'watts': 70.0}, {'pulse': 145.0, 'watts': 150.0}]
+        controller = self.phase_controller(points, lambda second: 145 if second < 10 else 114,
+                                           pulse=144, power=150)
+        controller.control_step(0)
+        controller.device.loads = []
+
+        for second in range(10, 100):     # the pulse lags, but the load stays low
+            controller.control_step(second)
+
+        self.assertEqual(controller.device.loads[0], 70.0 * 0.75)
+        self.assertEqual(len(controller.device.loads), 1)
+        controller.control_step(100)      # after 90 seconds pulse control takes over again
+        self.assertLess(controller.device.loads[-1], 70.0 * 0.75)
+
+    def test_far_target_is_a_guess_and_moves_only_part_of_the_way(self):
+        # Only the warm-up is known: 145 lies 31 beats away, so 70 + 3 x 31 = 163 W is a guess.
+        controller = self.phase_controller([{'pulse': 114.0, 'watts': 70.0}],
+                                           lambda second: 114 if second < 10 else 145, pulse=115, power=60)
+        controller.control_step(0)        # the warm-up target is known: straight to 70 W
+        self.assertEqual(controller.device.loads, [70.0])
+        controller.control_step(10)
+        self.assertEqual(controller.device.loads[1:], [70 + 0.75 * (163 - 70)])
+
+    def test_controller_learns_a_steady_minute_and_takes_points_from_a_control_message(self):
+        controller = self.phase_controller([], lambda second: 120, pulse=121, power=80)
+        for second in range(90):
+            controller.control_step(second)
+        self.assertEqual(controller.pulse_points, [{'pulse': 121.0, 'watts': 80.0}])
+
+        directory = tempfile.mkdtemp(prefix='pyergometer-points-test-')
+        self.addCleanup(shutil.rmtree, directory)
+        controller.live_control = os.path.join(directory, 'control.jsonl')
+        with open(controller.live_control, 'w') as control_file:
+            control_file.write(json.dumps({'pulse_points': [
+                {'pulse': 121, 'watts': 90}, {'pulse': 150, 'watts': 170}, {'pulse': 'x'}]}) + '\n')
+        controller.poll_live_updates()
+        # This workout's own point wins over the older one in the same band.
+        self.assertEqual(controller.pulse_points, [{'pulse': 121.0, 'watts': 80.0},
+                                                   {'pulse': 150.0, 'watts': 170.0}])
 
     def test_watch_pulse_replaces_the_bike_pulse_while_the_watch_connects(self):
         directory = tempfile.mkdtemp(prefix='pyergometer-watch-test-')
@@ -1945,6 +2033,77 @@ class FitnessTestTests(unittest.TestCase):
                                                     'test': 'astrand'}]}):
             with self.assertRaises(ValueError):
                 build_chart_plan(plan)
+
+
+class PulseModelTests(unittest.TestCase):
+    def test_only_steady_minutes_become_points(self):
+        # Half a minute for the pulse to follow the load, then a steady minute.
+        samples = [{'elapsed': t, 'pulse': 140 + t % 3, 'power': 150, 'rpm': 70} for t in range(100)]
+        # A falling pulse, a pulse still rising after a load change, and a pulse drop.
+        samples += [{'elapsed': 100 + t, 'pulse': 140 - t // 4, 'power': 30, 'rpm': 70} for t in range(90)]
+        samples += [{'elapsed': 190 + t, 'pulse': 100 + t // 12, 'power': 80, 'rpm': 70} for t in range(90)]
+        samples += [{'elapsed': 280 + t, 'pulse': 110, 'power': 70, 'rpm': 70, 'recovery': True}
+                    for t in range(90)]
+
+        self.assertEqual(steady_points(samples), [{'pulse': 141.0, 'watts': 150.0}])
+
+    def test_newer_points_replace_older_ones_in_the_same_band(self):
+        merged = merge_points([{'pulse': 140.0, 'watts': 160.0}, {'pulse': 110.0, 'watts': 70.0}],
+                              [{'pulse': 141.0, 'watts': 150.0}])
+        self.assertEqual(merged, [{'pulse': 110.0, 'watts': 70.0}, {'pulse': 141.0, 'watts': 150.0}])
+        # A pulse reading that hung at 94 while riding 100 W, then the real 126 at 100 W.
+        hung = merge_points([{'pulse': 91.0, 'watts': 50.0}, {'pulse': 94.0, 'watts': 100.0}],
+                            [{'pulse': 126.0, 'watts': 100.0}])
+        self.assertEqual(hung, [{'pulse': 91.0, 'watts': 50.0}, {'pulse': 126.0, 'watts': 100.0}])
+
+    def test_estimate_interpolates_and_extrapolates(self):
+        points = [{'pulse': 110.0, 'watts': 70.0}, {'pulse': 140.0, 'watts': 150.0}]
+        self.assertEqual(estimate_watts([], 140), (None, False))
+        self.assertEqual(estimate_watts(points, 125), (110.0, False))
+        self.assertEqual(estimate_watts(points, 140), (150.0, True))
+        watts, known = estimate_watts(points, 145)      # the points' own slope: 8/3 W per beat
+        self.assertAlmostEqual(watts, 150 + 5 * 80 / 30.0)
+        self.assertTrue(known)
+        self.assertEqual(estimate_watts([{'pulse': 110.0, 'watts': 70.0}], 130), (130.0, False))
+        self.assertEqual(estimate_watts(points, 60), (25, False))
+
+    def test_points_come_from_the_riders_recent_workouts(self):
+        now = datetime.datetime(2026, 11, 1, 12, 0)
+        sessions = [
+            {'profile': 'Steen', 'started': '2026-10-01T10:00:00',
+             'pulse_points': [{'pulse': 141.0, 'watts': 160.0}, {'pulse': 110.0, 'watts': 70.0}]},
+            {'profile': 'Steen', 'started': '2026-10-30T10:00:00',
+             'pulse_points': [{'pulse': 142.0, 'watts': 150.0}]},
+            {'profile': 'Steen', 'started': '2026-05-01T10:00:00',
+             'pulse_points': [{'pulse': 125.0, 'watts': 200.0}]},
+            {'profile': 'Bo', 'started': '2026-10-31T10:00:00',
+             'pulse_points': [{'pulse': 120.0, 'watts': 300.0}]},
+            {'profile': 'Steen', 'started': '2026-10-31T10:00:00'}]
+
+        self.assertEqual(profile_pulse_points(sessions, 'Steen', now),
+                         [{'pulse': 110.0, 'watts': 70.0}, {'pulse': 142.0, 'watts': 150.0}])
+        self.assertEqual(profile_pulse_points(sessions, 'Ny', now), [])
+
+    def test_earlier_workouts_get_points_from_their_logs(self):
+        directory = tempfile.mkdtemp(prefix='pyergometer-backfill-test-')
+        self.addCleanup(shutil.rmtree, directory)
+        steps = [{'pulse': str(140 + t % 2), 'target_pulse': '144', 'power': '150', 'rpm': '70'}
+                 for t in range(90)]
+        with open(os.path.join(directory, 'real.json'), 'w') as log_file:
+            json.dump({'steps': steps}, log_file)
+        with open(os.path.join(directory, 'simulated.json'), 'w') as log_file:
+            json.dump({'steps': [dict(step, pulse='135') for step in steps]}, log_file)
+        history = os.path.join(directory, 'history.json')
+        write_history(history, [
+            {'profile': 'Steen', 'started': '1', 'log': 'real.json'},
+            {'profile': 'Steen', 'started': '2', 'log': 'simulated.json'},
+            {'profile': 'Steen', 'started': '3', 'log': 'missing.json'},
+            {'profile': 'Steen', 'started': '4', 'log': None, 'pulse_points': [{'pulse': 1, 'watts': 2}]}])
+
+        backfill_pulse_points(history, directory)
+
+        self.assertEqual([session['pulse_points'] for session in read_history(history)],
+                         [[{'pulse': 140.5, 'watts': 150.0}], [], [], [{'pulse': 1, 'watts': 2}]])
 
 
 class LanguageTests(unittest.TestCase):
