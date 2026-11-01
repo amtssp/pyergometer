@@ -688,7 +688,7 @@ def _efficiency(samples):
 
 
 # ---------------------------------------------------------------- fitness tests
-TEST_TYPES = ('astrand', 'ramp')
+TEST_TYPES = ('astrand', 'ramp', 'ekblom-bak')
 
 # Astrand (1960) age correction factors for the Astrand-Ryhming nomogram, as
 # tabulated by e.g. topendsports.com. Values between ages are interpolated;
@@ -700,6 +700,19 @@ ASTRAND_MAX_PULSE = 170
 ASTRAND_STEADY_BEATS = 5
 RAMP_MIN_SECONDS = 180
 RAMP_PEDALLING_RPM = 40
+
+# Ekblom-Bak test (Bjorkman et al. 2016): 4 min at the standard 30 W, then 4 min at a
+# higher load that feels somewhat hard (Borg about 14). The pulse of each stage is
+# the mean of its last 45 seconds (the paper averages 3:15, 3:30, 3:45 and 4:00).
+EKBLOM_BAK_STAGE_SECONDS = 240
+EKBLOM_BAK_MEASURED_SECONDS = 45
+EKBLOM_BAK_STANDARD_WATTS = 30
+EKBLOM_BAK_STANDARD_TOLERANCE = 5
+# ln VO2max (L/min) = a - b x age - c x dHR/dW + d x dW - e x pulse at the standard load
+EKBLOM_BAK_COEFFICIENTS = {
+    'male': (2.04900, 0.00858, 0.90742, 0.00178, 0.00290),
+    'female': (1.84390, 0.00673, 0.62578, 0.00175, 0.00471),
+}
 
 
 def astrand_age_factor(age):
@@ -820,7 +833,61 @@ def ramp_fitness(result, best, profile):
     result['valid'] = not result['problems']
 
 
-PROFILE_TEST_PROBLEMS = ('astrand_profile_missing', 'ramp_weight_missing')
+def ekblom_bak_vo2max_litres(watts_low, pulse_low, watts_high, pulse_high, age, sex):
+    """Ekblom-Bak test equations (Bjorkman et al. 2016), in litres O2 per minute."""
+    a, b, c, d, e = EKBLOM_BAK_COEFFICIENTS['female' if sex == 'female' else 'male']
+    delta_watts = watts_high - watts_low
+    delta_pulse = pulse_high - pulse_low
+    return math.exp(a - b * age - c * delta_pulse / delta_watts + d * delta_watts - e * pulse_low)
+
+
+def analyze_ekblom_bak(samples, blocks, profile):
+    """Fitness (VO2max) from the pulse at the end of two 4-minute loads."""
+    result = {'type': 'ekblom-bak', 'valid': False, 'problems': []}
+    if len(blocks) != 2:
+        result['problems'].append({'code': 'ekblom_bak_stages'})
+        return result
+    stages = []
+    for block in blocks:
+        measured = [s for s in samples if block['end'] - EKBLOM_BAK_MEASURED_SECONDS <= s['elapsed'] < block['end']
+                    and s.get('pulse', 0) >= 20]
+        if (block['end'] - block['start'] < EKBLOM_BAK_STAGE_SECONDS or
+                len(measured) < EKBLOM_BAK_MEASURED_SECONDS * 2 // 3):
+            result['problems'].append({'code': 'ekblom_bak_incomplete'})
+            return result
+        stages.append((_mean([s.get('power', s.get('target_power', 0)) for s in measured]),
+                       _mean([s['pulse'] for s in measured]), measured))
+    (watts_low, pulse_low, low), (watts_high, pulse_high, high) = stages
+    result.update({'watts_low': int(round(watts_low)), 'pulse_low': int(round(pulse_low)),
+                   'watts_high': int(round(watts_high)), 'pulse_high': int(round(pulse_high)),
+                   # Kept unrounded so the result can be worked out again for another profile.
+                   'means': [round(watts_low, 2), round(pulse_low, 2),
+                             round(watts_high, 2), round(pulse_high, 2)]})
+    if abs(watts_low - EKBLOM_BAK_STANDARD_WATTS) > EKBLOM_BAK_STANDARD_TOLERANCE:
+        result['problems'].append({'code': 'ekblom_bak_standard_load', 'watts': EKBLOM_BAK_STANDARD_WATTS})
+    if watts_high - watts_low < 10 or pulse_high <= pulse_low:
+        result['problems'].append({'code': 'ekblom_bak_no_rise'})
+    if any(s.get('limited') for s in low + high):
+        result['problems'].append({'code': 'pulse_limited'})
+    ekblom_bak_fitness(result, result['means'], profile)
+    return result
+
+
+def ekblom_bak_fitness(result, means, profile):
+    """Add the profile-dependent part of an Ekblom-Bak result: age, sex and weight."""
+    age = _profile_age(profile)
+    sex = profile.get('sex') if profile else None
+    weight = profile.get('weight_kg') if profile else None
+    if not age or not sex or not weight:
+        result['problems'].append({'code': 'ekblom_bak_profile_missing'})
+    elif means[2] > means[0] and means[3] > means[1]:
+        litres = ekblom_bak_vo2max_litres(means[0], means[1], means[2], means[3], age, sex)
+        result.update({'age': age, 'vo2max_litres': round(litres, 2),
+                       'vo2max': round(litres * 1000 / weight, 1)})
+    result['valid'] = not result['problems']
+
+
+PROFILE_TEST_PROBLEMS = ('astrand_profile_missing', 'ramp_weight_missing', 'ekblom_bak_profile_missing')
 PROFILE_TEST_FIELDS = ('age', 'age_factor', 'vo2max_litres', 'vo2max')
 
 
@@ -835,6 +902,9 @@ def rescore_test(test, profile):
     elif test.get('type') == 'ramp' and test.get('map_watts'):
         def fitness(result):
             ramp_fitness(result, test['map_watts'], profile)
+    elif test.get('type') == 'ekblom-bak' and test.get('means'):
+        def fitness(result):
+            ekblom_bak_fitness(result, test['means'], profile)
     else:
         return test  # an incomplete test has no profile-dependent part
     result = dict((key, value) for key, value in test.items() if key not in PROFILE_TEST_FIELDS)
@@ -847,9 +917,16 @@ def rescore_test(test, profile):
 def analyze_tests(samples, chart_plan, profile):
     results = []
     seen = set()
-    for block in chart_plan.get('blocks', []):
+    blocks = chart_plan.get('blocks', [])
+    for block in blocks:
         test = block.get('test')
-        if test and (block['index'], test) not in seen:
+        if test == 'ekblom-bak':
+            # One result from both stages, in the order they were ridden.
+            if test not in seen:
+                seen.add(test)
+                stages = [item for item in blocks if item.get('test') == test]
+                results.append(analyze_ekblom_bak(samples, stages, profile))
+        elif test and (block['index'], test) not in seen:
             seen.add((block['index'], test))
             analyze = analyze_astrand if test == 'astrand' else analyze_ramp
             results.append(analyze(samples, block, profile))

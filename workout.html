@@ -557,6 +557,7 @@
             <option value="pulse-4x4" data-i18n="template.name.pulse-4x4"></option>
             <option value="vo2max-5x5" data-i18n="template.name.vo2max-5x5"></option>
             <option value="astrand" data-i18n="template.name.astrand"></option>
+            <option value="ekblom-bak" data-i18n="template.name.ekblom-bak"></option>
             <option value="ramp-test" data-i18n="template.name.ramp-test"></option>
           </select>
         </label>
@@ -1452,6 +1453,17 @@
               text += ' ' + t('guide.astrand.range');
             }
           }
+        } else if (block.test === 'ekblom-bak') {
+          var stages = data.plan.blocks.filter(function (item) { return item.test === 'ekblom-bak'; });
+          var stage = stages.indexOf(block) + 1;
+          var measureFrom = block.end - 45;
+          if (now < measureFrom) {
+            text = t('guide.ekblom-bak.stage' + (stage === 1 ? '1' : '2'),
+              {from: clock(measureFrom), to: clock(block.end)});
+          } else {
+            text = t('guide.ekblom-bak.measuring', {stage: stage, from: clock(measureFrom), to: clock(block.end),
+              average: average(measureFrom, block.end) || '–'});
+          }
         } else if (block.test === 'ramp') {
           var peak = points.filter(function (point) { return point.elapsed >= block.start; })
             .reduce(function (highest, point) { return Math.max(highest, point.pulse || 0); }, 0);
@@ -2103,6 +2115,24 @@
         };
       }
 
+      function ekblomBakTemplate() {
+        // The first stage is always the standard 30 W; the second should feel somewhat
+        // hard (Borg about 14), which for most is around 80 W for women and 110 W for men.
+        var profile = profilesByName[activeProfile] || {};
+        var load = profile.sex === 'male' ? 110 : 80;
+        return {
+          mode: 'power',
+          message: t('template.message.ekblom-bak', {watts: load}),
+          blocks: [
+            {type: 'interval', label: t('template.block.ekblom-bak.low'), minutes: 4, power: 30,
+             test: 'ekblom-bak'},
+            {type: 'interval', label: t('template.block.ekblom-bak.high'), minutes: 4, power: load,
+             test: 'ekblom-bak'},
+            {type: 'recovery', seconds: 60}
+          ]
+        };
+      }
+
       function setWorkoutMode(mode, convertBlocks) {
         var previous = convertBlocks ? readBlocks() : null;
         workoutMode = mode === 'power' ? 'power' : 'pulse';
@@ -2691,6 +2721,15 @@
               text += ' ' + t('result.vo2max', {value: I18N.number(test.vo2max)});
             }
             if (test.pulse) text += ' ' + t('result.astrand.pulse', {pulse: test.pulse, watts: test.watts});
+          } else if (test.type === 'ekblom-bak') {
+            text = ' ' + t(test.valid ? 'result.ekblom-bak' : 'result.ekblom-bak.invalid');
+            if (test.vo2max) {
+              text += ' ' + t('result.vo2max', {value: I18N.number(test.vo2max)});
+            }
+            if (test.pulse_low) {
+              text += ' ' + t('result.ekblom-bak.pulse', {pulseLow: test.pulse_low, wattsLow: test.watts_low,
+                pulseHigh: test.pulse_high, wattsHigh: test.watts_high});
+            }
           } else {
             text = ' ' + t(test.valid ? 'result.ramp' : 'result.ramp.invalid');
             if (test.map_watts) {
@@ -2920,6 +2959,7 @@
             ]
           },
           'astrand': astrandTemplate(),
+          'ekblom-bak': ekblomBakTemplate(),
           'ramp-test': {
             mode: 'power',
             pulse_limit: false,

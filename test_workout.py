@@ -6,6 +6,7 @@ import shutil
 import datetime
 import http.client
 import json
+import math
 import re
 import subprocess
 import sys
@@ -20,6 +21,8 @@ from workout import (
     summarize_workout,
     analyze_astrand,
     analyze_ramp,
+    analyze_tests,
+    ekblom_bak_vo2max_litres,
     append_history,
     change_history,
     read_history,
@@ -1764,6 +1767,75 @@ class FitnessTestTests(unittest.TestCase):
                          [{'code': 'astrand_unstable', 'limit': 5}])
         incomplete = {'type': 'astrand', 'valid': False, 'problems': [{'code': 'astrand_incomplete'}]}
         self.assertEqual(rescore_test(incomplete, self.profile), incomplete)
+
+    def ekblom_bak_chart(self, high=110):
+        return build_chart_plan({'mode': 'power', 'blocks': [
+            {'type': 'interval', 'minutes': 4, 'power': 30, 'test': 'ekblom-bak'},
+            {'type': 'interval', 'minutes': 4, 'power': high, 'test': 'ekblom-bak'},
+            {'type': 'recovery', 'seconds': 60}]})
+
+    def ekblom_bak_samples(self, pulse_low=95, pulse_high=135, high=110, seconds=540, limited=False):
+        samples = []
+        for t in range(seconds):
+            low_stage = t < 240
+            samples.append({'elapsed': t, 'pulse': pulse_low if low_stage else pulse_high,
+                            'power': 30 if low_stage else high, 'limited': limited and not low_stage,
+                            'recovery': t >= 480})
+        return samples
+
+    def test_ekblom_bak_formula(self):
+        # Worked by hand from Bjorkman et al. (2016): a 67-year-old man, 95 bpm at 30 W, 135 at 110 W.
+        x = 2.049 - 0.00858 * 67 - 0.90742 * 40 / 80.0 + 0.00178 * 80 - 0.0029 * 95
+        self.assertAlmostEqual(ekblom_bak_vo2max_litres(30, 95, 110, 135, 67, 'male'), math.exp(x), places=6)
+        self.assertAlmostEqual(ekblom_bak_vo2max_litres(30, 95, 110, 135, 67, 'male'), 2.43, places=2)
+        # A smaller rise in pulse for the same extra load means a higher VO2max.
+        self.assertGreater(ekblom_bak_vo2max_litres(30, 95, 110, 125, 67, 'male'), 2.43)
+
+    def test_ekblom_bak_test_uses_both_stages(self):
+        profile = {'birth_year': datetime.date.today().year - 67, 'sex': 'male', 'weight_kg': 80.0}
+
+        results = analyze_tests(self.ekblom_bak_samples(), self.ekblom_bak_chart(), profile)
+
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertTrue(result['valid'], result['problems'])
+        self.assertEqual((result['watts_low'], result['pulse_low'], result['watts_high'], result['pulse_high']),
+                         (30, 95, 110, 135))
+        expected = ekblom_bak_vo2max_litres(30, 95, 110, 135, 67, 'male') * 1000 / 80
+        self.assertEqual(result['vo2max'], round(expected, 1))
+
+    def test_ekblom_bak_problems_make_the_test_invalid(self):
+        chart = self.ekblom_bak_chart()
+        short = analyze_tests(self.ekblom_bak_samples(seconds=400), chart, self.profile)[0]
+        flat = analyze_tests(self.ekblom_bak_samples(pulse_high=95), chart, self.profile)[0]
+        limited = analyze_tests(self.ekblom_bak_samples(limited=True), chart, self.profile)[0]
+        no_profile = analyze_tests(self.ekblom_bak_samples(), chart, {})[0]
+        heavy_start = build_chart_plan({'mode': 'power', 'blocks': [
+            {'type': 'interval', 'minutes': 4, 'power': 60, 'test': 'ekblom-bak'},
+            {'type': 'interval', 'minutes': 4, 'power': 110, 'test': 'ekblom-bak'}]})
+        samples = [dict(s, power=60) if s['elapsed'] < 240 else s for s in self.ekblom_bak_samples()]
+        standard = analyze_tests(samples, heavy_start, self.profile)[0]
+        one_stage = analyze_tests(self.ekblom_bak_samples(), build_chart_plan({'mode': 'power', 'blocks': [
+            {'type': 'interval', 'minutes': 4, 'power': 30, 'test': 'ekblom-bak'}]}), self.profile)[0]
+
+        self.assertEqual(short['problems'], [{'code': 'ekblom_bak_incomplete'}])
+        self.assertEqual(flat['problems'], [{'code': 'ekblom_bak_no_rise'}])
+        self.assertNotIn('vo2max', flat)
+        self.assertEqual(limited['problems'], [{'code': 'pulse_limited'}])
+        self.assertEqual(no_profile['problems'], [{'code': 'ekblom_bak_profile_missing'}])
+        self.assertEqual(standard['problems'], [{'code': 'ekblom_bak_standard_load', 'watts': 30}])
+        self.assertEqual(one_stage['problems'], [{'code': 'ekblom_bak_stages'}])
+        for result in (short, flat, limited, no_profile, standard, one_stage):
+            self.assertFalse(result['valid'])
+
+    def test_ekblom_bak_result_is_worked_out_again_for_another_profile(self):
+        chart = self.ekblom_bak_chart()
+        without = analyze_tests(self.ekblom_bak_samples(), chart, {})[0]
+
+        moved = rescore_test(without, self.profile)
+
+        self.assertEqual(moved, analyze_tests(self.ekblom_bak_samples(), chart, self.profile)[0])
+        self.assertTrue(moved['valid'])
 
     def history_with(self, sessions):
         directory = tempfile.mkdtemp(prefix='pyergometer-history-test-')

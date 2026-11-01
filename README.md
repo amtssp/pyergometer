@@ -174,6 +174,17 @@ it leaves out its last easy interval.
   above 65 the trend is continued, which is uncertain). The test is only
   valid with a steady pulse (at most 5 beats between minutes 5 and 6) between
   120 and 170. Typical error is about 10-15 % against a laboratory test.
+  For people over 65 it tends to come out about 10 % too low (Väisänen et al.
+  2019).
+* ``Test · Ekblom-Bak (submaksimal, 2 trin)``: 4 minutes at the standard 30 W,
+  4 minutes at a load that feels somewhat hard (Borg about 14; suggested 80 W
+  for women and 110 W for men) and a pulse drop. The pulse of each stage is the
+  mean of its last 45 seconds, and VO2max comes from the sex-specific equations
+  of Björkman et al. (2016), which use age, the pulse at 30 W and how much the
+  pulse rises per extra watt. It was validated on ages 20-86 (typical error
+  about 9 %) and, unlike the Åstrand test, showed no systematic error in a study
+  of 65-75-year-olds. The first stage must stay at 30 W, and the second needs a
+  higher load and pulse.
 * ``Test · Maksimal rampe``: 5 minutes at 50 W, then 20 W more per minute until
   the rider stops. Reports the best whole minute (MAP), FTP as 75 % of it, the
   highest pulse and VO2max estimated as 10.8 x W/kg + 7. The pulse limit is
@@ -198,8 +209,8 @@ last 12 months or everything; the page shows:
 * Stat tiles with the latest VO2max, FTP, 60-second pulse drop and watt per
   heartbeat, each with its change over the period, plus total training time
   and number of workouts.
-* Charts of VO2max (one line per test type, since the Åstrand and ramp tests
-  are not directly comparable; coloured bands behind it show the level from
+* Charts of VO2max (one line per test type, since the Åstrand, Ekblom-Bak and
+  ramp tests are not directly comparable; coloured bands behind it show the level from
   very low to very high for the profile's sex and age at each test), pulse drop
   and watt per heartbeat (every value
   over 3 months, weekly or monthly averages over longer periods; tests are

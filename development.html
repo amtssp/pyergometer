@@ -898,7 +898,7 @@
         var valid = function (type) {
           return tests.filter(function (t) { return t.test.type === type && t.test.valid && t.test.vo2max; });
         };
-        var astrand = valid('astrand'), ramp = valid('ramp');
+        var astrand = valid('astrand'), ekblomBak = valid('ekblom-bak'), ramp = valid('ramp');
         var recoveries = recoveriesOf(sessions).sort(function (a, b) { return a.date - b.date; });
         var efficiency = efficiencyOf(sessions);
 
@@ -906,12 +906,12 @@
         var tiles = document.getElementById('tiles');
         tiles.textContent = '';
         var since = t('development.since');
-        var fitness = astrand.concat(ramp).sort(function (a, b) { return a.date - b.date; });
+        var fitness = astrand.concat(ekblomBak, ramp).sort(function (a, b) { return a.date - b.date; });
         var latest = fitness[fitness.length - 1];
         var firstSame = latest && fitness.filter(function (t) { return t.test.type === latest.test.type; })[0];
         var vo2Tile = tile(t('development.vo2max.title'), latest ? latest.test.vo2max : null, 'ml/kg/min',
           latest ? (firstSame !== latest ? {change: latest.test.vo2max - firstSame.test.vo2max, since: since}
-                                         : {text: t(latest.test.type === 'astrand' ? 'test.astrand' : 'test.ramp')}) : null,
+                                         : {text: t('test.' + latest.test.type)}) : null,
           true, 1);
         var latestNorm = latest && fitnessNorm(latest.date);
         if (latestNorm) {
@@ -956,14 +956,21 @@
             var norm = fitnessNorm(t.date);
             var note = t.test.type === 'astrand'
               ? I18N.t('development.note.astrand', {pulse: t.test.pulse, watts: t.test.watts})
+              : t.test.type === 'ekblom-bak'
+              ? I18N.t('development.note.ekblom-bak', {pulseLow: t.test.pulse_low, wattsLow: t.test.watts_low,
+                  pulseHigh: t.test.pulse_high, wattsHigh: t.test.watts_high})
               : I18N.t('development.note.ramp', {watts: t.test.map_watts});
             if (norm) note += ' · ' + levelName(fitnessLevel(t.test.vo2max, norm)) + ' ' + groupName(norm);
             return {date: t.date, value: t.test.vo2max, note: note};
           });
         };
         var vo2Series = [];
-        if (astrand.length) vo2Series.push({name: t('test.astrand'), color: css('--series-1'), points: points(astrand)});
-        if (ramp.length) vo2Series.push({name: t('test.ramp'), color: css(astrand.length ? '--series-2' : '--series-1'), points: points(ramp)});
+        [['astrand', astrand], ['ekblom-bak', ekblomBak], ['ramp', ramp]].forEach(function (kind) {
+          if (kind[1].length) {
+            vo2Series.push({name: t('test.' + kind[0]), color: css('--series-' + (vo2Series.length + 1)),
+              points: points(kind[1])});
+          }
+        });
         lineChart(document.getElementById('chart-vo2max'), vo2Series, {
           unit: 'ml/kg/min', decimals: 1, minPad: 2, label: t('development.vo2max.label'), levels: true,
           empty: t('development.vo2max.empty', {period: periodText})});
@@ -1001,7 +1008,8 @@
           table(document.getElementById('years-table'),
             [{text: t('development.column.year')}, {text: t('development.column.workouts'), num: true},
              {text: t('development.column.time'), num: true},
-             {text: t('development.column.vo2maxAstrand')}, {text: t('development.column.vo2maxRamp')},
+             {text: t('development.column.vo2maxAstrand')}, {text: t('development.column.vo2maxEkblomBak')},
+             {text: t('development.column.vo2maxRamp')},
              {text: t('development.column.avgRecovery'), num: true},
              {text: t('development.column.avgWattPerBeat'), num: true}],
             Object.keys(years).sort().reverse().map(function (year) {
@@ -1025,7 +1033,7 @@
               }).join('; ');
               var yearMinutes = list.reduce(function (a, s) { return a + minutes(s.seconds); }, 0);
               return [year, list.length, t('development.hours', {value: number(yearMinutes / 60, 1)}),
-                fitnessText('astrand'), fitnessText('ramp'),
+                fitnessText('astrand'), fitnessText('ekblom-bak'), fitnessText('ramp'),
                 drop !== null ? number(drop, 1) : '–', perBeat || '–'];
             }));
         }
@@ -1043,6 +1051,9 @@
             if (test.type === 'astrand') {
               result = test.pulse ? I18N.t('development.result.astrand', {pulse: test.pulse,
                 minute5: test.pulse_minute5, minute6: test.pulse_minute6, watts: test.watts}) : '–';
+            } else if (test.type === 'ekblom-bak') {
+              result = test.pulse_low ? I18N.t('development.note.ekblom-bak', {pulseLow: test.pulse_low,
+                wattsLow: test.watts_low, pulseHigh: test.pulse_high, wattsHigh: test.watts_high}) : '–';
             } else {
               result = test.map_watts ? I18N.t('development.result.ramp', {map: test.map_watts,
                 ftp: test.ftp_watts, maxPulse: test.max_pulse || '–'}) : '–';
@@ -1053,8 +1064,7 @@
             if (test.problems && test.problems.length) {
               state.appendChild(el('div', 'problems', test.problems.map(I18N.problem).join(' ')));
             }
-            var testName = I18N.t(test.type === 'astrand' ? 'development.test.astrand'
-              : 'development.test.ramp');
+            var testName = I18N.t('development.test.' + test.type);
             return [rowBox(t.session, I18N.t('development.select.row', {name: testName, date: longDate(t.date)})),
               longDate(t.date), testName, result,
               test.vo2max ? number(test.vo2max, 1) + (fitnessNorm(t.date)
