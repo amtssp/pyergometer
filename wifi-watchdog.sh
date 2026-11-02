@@ -11,12 +11,31 @@
 #   3. only if REBOOT_AFTER is set (seconds, 0 = never): reboot the Pi, at most
 #      every REBOOT_INTERVAL seconds and never while a workout is running.
 #
+# With PREFERRED_BSSID set, the Pi is kept on that one access point (its BSSID
+# is locked in the Wi-Fi connection) instead of roaming between access points
+# with the same name. If Wi-Fi has been down for UNLOCK_AFTER seconds while
+# locked, the lock is lifted so any access point can be used. The lock is put
+# back once the preferred access point is seen again with at least
+# RELOCK_SIGNAL % signal - never during a workout, and after a failed lock
+# only after a pause that doubles each time (RELOCK_PAUSE up to 4 hours).
+#
 # It works with any Wi-Fi adapter: the interface, driver and USB device are
 # looked up when needed. With no Wi-Fi adapter or no Wi-Fi connection set to
 # connect automatically (for example a cable only), it does nothing.
+# Settings can also be put in $SETTINGS (shell variable lines).
 # Runs as root from the pyergometer-wifi-watchdog service; see install-pi.sh.
 set -u
 
+SETTINGS=${SETTINGS:-/etc/default/pyergometer-wifi-watchdog}
+# shellcheck source=/dev/null
+[ -r "$SETTINGS" ] && . "$SETTINGS"
+
+PREFERRED_BSSID=$(echo "${PREFERRED_BSSID:-}" | tr '[:lower:]' '[:upper:]')
+UNLOCK_AFTER=${UNLOCK_AFTER:-120}
+RELOCK_SIGNAL=${RELOCK_SIGNAL:-40}
+RELOCK_PAUSE=${RELOCK_PAUSE:-900}
+# A lock counts as working once Wi-Fi has stayed up this long after it.
+LOCK_PROVEN_AFTER=${LOCK_PROVEN_AFTER:-600}
 CHECK_INTERVAL=${CHECK_INTERVAL:-60}
 RECONNECT_AFTER=${RECONNECT_AFTER:-180}
 RESET_AFTER=${RESET_AFTER:-300}
@@ -84,6 +103,29 @@ reset_wifi() {
     nmcli device connect "$(wifi_interface)" > /dev/null 2>&1 || true
 }
 
+wifi_connection() {
+    # The Wi-Fi connection that comes up by itself (the one to lock to an access point).
+    nmcli -t -f NAME,TYPE,AUTOCONNECT connection show 2>/dev/null |
+        awk -F: '$2 == "802-11-wireless" && $3 == "yes" { print $1; exit }'
+}
+
+locked_bssid() {
+    nmcli -g 802-11-wireless.bssid connection show "$1" 2>/dev/null | tr -d '\\' | tr '[:lower:]' '[:upper:]'
+}
+
+preferred_signal() {
+    # The preferred access point's signal in %, or nothing when it is not seen.
+    nmcli -t -f BSSID,SIGNAL device wifi list ifname "$1" 2>/dev/null | tr -d '\\' |
+        awk -F: -v wanted="$PREFERRED_BSSID" \
+            'toupper($1":"$2":"$3":"$4":"$5":"$6) == wanted { print $7; exit }'
+}
+
+set_lock() {
+    local conn=$1 bssid=$2
+    nmcli connection modify "$conn" 802-11-wireless.bssid "$bssid" > /dev/null 2>&1 &&
+        nmcli --wait 40 connection up "$conn" > /dev/null 2>&1
+}
+
 maybe_reboot() {
     local now=$1 last=0
     [ "$REBOOT_AFTER" -gt 0 ] || return 0
@@ -101,10 +143,16 @@ maybe_reboot() {
 }
 
 log "WiFi-vagthund startet (tjek hvert ${CHECK_INTERVAL}s, forbind igen efter ${RECONNECT_AFTER}s," \
-    "nulstil efter ${RESET_AFTER}s, genstart: $([ "$REBOOT_AFTER" -gt 0 ] && echo "efter ${REBOOT_AFTER}s" || echo fra))"
+    "nulstil efter ${RESET_AFTER}s, genstart: $([ "$REBOOT_AFTER" -gt 0 ] && echo "efter ${REBOOT_AFTER}s" || echo fra)," \
+    "foretrukket adgangspunkt: ${PREFERRED_BSSID:-intet})"
 down_since=0
 reconnected=0
 last_reset=0
+# Lock bookkeeping: when it was last put on, how often in a row it failed, and
+# when it may be tried again.
+locked_at=0
+lock_failures=0
+relock_after=0
 while true; do
     iface=$(wifi_interface)
     if [ -z "$iface" ] || ! wifi_wanted; then
@@ -112,23 +160,52 @@ while true; do
         sleep "$CHECK_INTERVAL"
         continue
     fi
+    conn=$(wifi_connection)
+    now=$(date +%s)
     if wifi_healthy "$iface"; then
         if [ "$down_since" -ne 0 ]; then
-            log "WiFi på $iface virker igen efter $(( $(date +%s) - down_since )) sekunder"
+            log "WiFi på $iface virker igen efter $(( now - down_since )) sekunder"
         fi
         down_since=0
         reconnected=0
         last_reset=0
+        if [ -n "$PREFERRED_BSSID" ] && [ -n "$conn" ]; then
+            if [ -n "$(locked_bssid "$conn")" ]; then
+                if [ "$locked_at" -ne 0 ] && [ $((now - locked_at)) -ge "$LOCK_PROVEN_AFTER" ]; then
+                    lock_failures=0
+                    locked_at=0
+                fi
+            elif [ "$now" -ge "$relock_after" ] && ! workout_running; then
+                signal=$(preferred_signal "$iface")
+                if [ -n "$signal" ] && [ "$signal" -ge "$RELOCK_SIGNAL" ]; then
+                    log "Låser $iface til det foretrukne adgangspunkt $PREFERRED_BSSID (signal $signal %)"
+                    set_lock "$conn" "$PREFERRED_BSSID" || log "Kunne ikke forbinde til $PREFERRED_BSSID"
+                    locked_at=$(date +%s)
+                fi
+            fi
+        fi
         sleep "$CHECK_INTERVAL"
         continue
     fi
 
-    now=$(date +%s)
     if [ "$down_since" -eq 0 ]; then
         down_since=$now
         log "WiFi på $iface er nede"
     fi
     down=$((now - down_since))
+    if [ -n "$conn" ] && [ "$down" -ge "$UNLOCK_AFTER" ] && [ -n "$(locked_bssid "$conn")" ]; then
+        # The locked access point does not work: let the Pi use any access point.
+        lock_failures=$((lock_failures + 1))
+        pause=$((RELOCK_PAUSE << (lock_failures - 1)))
+        [ "$pause" -gt 14400 ] && pause=14400
+        relock_after=$((now + pause))
+        locked_at=0
+        log "WiFi har været nede i $down sekunder på det låste adgangspunkt; låser op" \
+            "og prøver alle adgangspunkter (låser tidligst igen om $((pause / 60)) minutter)"
+        set_lock "$conn" "" || true
+        sleep "$CHECK_INTERVAL"
+        continue
+    fi
     if [ "$down" -ge "$RESET_AFTER" ] && { [ "$last_reset" -eq 0 ] || [ $((now - last_reset)) -ge "$RESET_REPEAT" ]; }; then
         reset_wifi "$iface"
         last_reset=$now

@@ -59,6 +59,20 @@ minutes. It works with any adapter and does nothing on a cable-only setup.
 Rebooting as a last resort is off; set ``REBOOT_AFTER`` (seconds) in the
 service to enable it. Follow it with ``journalctl -u pyergometer-wifi-watchdog -f``.
 
+When several access points share one network name, the Pi can be kept on the
+best one. Put its BSSID in ``/etc/default/pyergometer-wifi-watchdog``:
+
+    PREFERRED_BSSID=00:1E:80:C6:D7:78
+
+and restart the watchdog. It locks the Wi-Fi connection to that access point
+once it is seen with at least 40 % signal (``RELOCK_SIGNAL``), never during a
+workout. If Wi-Fi then stays down for 2 minutes (``UNLOCK_AFTER``), it lifts the
+lock so any access point can be used, and tries the lock again after 15
+minutes, doubling the pause after each failed try up to 4 hours
+(``RELOCK_PAUSE``). Remove the line (and the lock, with
+``sudo nmcli connection modify <name> 802-11-wireless.bssid ""``) to roam freely
+again.
+
 Starting the program without a session file opens a local workout builder:
 
     ./pyergometer.py
