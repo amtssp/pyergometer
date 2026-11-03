@@ -54,7 +54,8 @@ from bleheartrate import (
     HeartRateMonitor,
     _HeartRateWorker,
     parse_heart_rate_measurement,
-    read_shared_json
+    read_shared_json,
+    release_stale_connection
 )
 from ergometer import Ergometer
 from devices import ErgometerDevice, create_device, device_type_ids, public_device_types
@@ -2038,6 +2039,31 @@ class FitnessTestTests(unittest.TestCase):
                                                     'test': 'astrand'}]}):
             with self.assertRaises(ValueError):
                 build_chart_plan(plan)
+
+
+class StaleWatchConnectionTests(unittest.TestCase):
+    def run_with(self, info, platform='linux'):
+        from unittest import mock
+        import bleheartrate
+        calls = []
+
+        def fake_run(command, **unused):
+            calls.append(command[1])
+            return mock.Mock(stdout=info if command[1] == 'info' else b'')
+
+        with mock.patch.object(bleheartrate.sys, 'platform', platform), \
+                mock.patch.object(bleheartrate.shutil, 'which', lambda name: '/usr/bin/' + name), \
+                mock.patch.object(bleheartrate.subprocess, 'run', fake_run):
+            released = release_stale_connection('E4:B2:E8:0A:1A:6F')
+        return released, calls
+
+    def test_a_watch_left_connected_is_disconnected(self):
+        self.assertEqual(self.run_with(b'\tName: HUAWEI WATCH\n\tConnected: yes\n'),
+                         (True, ['info', 'disconnect']))
+
+    def test_a_free_watch_is_left_alone(self):
+        self.assertEqual(self.run_with(b'\tConnected: no\n'), (False, ['info']))
+        self.assertEqual(self.run_with(b'\tConnected: yes\n', platform='win32'), (False, []))
 
 
 class PulseModelTests(unittest.TestCase):

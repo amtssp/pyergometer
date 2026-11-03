@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -55,6 +57,27 @@ def parse_heart_rate_measurement(data):
     if pulse < 20 or pulse > 250:
         raise ValueError('Bluetooth heart rate is outside the supported range')
     return pulse
+
+
+def release_stale_connection(address):
+    """Disconnect the watch if BlueZ still holds it while nothing uses it.
+
+    A workout whose Bluetooth process ended without disconnecting leaves the
+    watch connected; a connected watch stops advertising, so the next workout
+    could not find it. Linux only; returns whether a connection was released.
+    """
+    if not sys.platform.startswith('linux') or not shutil.which('bluetoothctl'):
+        return False
+    try:
+        info = subprocess.run(['bluetoothctl', 'info', address], stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, timeout=10).stdout
+        if b'Connected: yes' not in info:
+            return False
+        subprocess.run(['bluetoothctl', 'disconnect', address], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=15)
+        return True
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def _bleak_modules():
@@ -173,9 +196,10 @@ class HeartRateMonitor:
 
     def stop(self):
         if self.process and self.process.poll() is None:
+            # The worker disconnects from the watch on SIGTERM; give it time to do so.
             self.process.terminate()
             try:
-                self.process.wait(timeout=3)
+                self.process.wait(timeout=8)
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait()
@@ -193,7 +217,7 @@ class _HeartRateWorker:
 
     def run(self):
         try:
-            asyncio.run(self._watch())
+            asyncio.run(self._main())
         except Exception as error:
             self.connected = False
             self.error = 'Bluetooth-pulsmåleren stoppede: %s' % error
@@ -238,10 +262,25 @@ class _HeartRateWorker:
         self.last_pulse = pulse
         self.last_sample_at = sample_time
 
+    async def _main(self):
+        # Stopping the workout sends SIGTERM; cancelling the task leaves the
+        # connection block, which disconnects the watch so the next workout finds it.
+        task = asyncio.current_task()
+        try:
+            asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
+        except (NotImplementedError, AttributeError, RuntimeError, ValueError):
+            pass  # Windows has no signal handlers in asyncio; there the process just ends
+        try:
+            await self._watch()
+        except asyncio.CancelledError:
+            pass
+
     async def _watch(self):
         client_type, scanner_type = _bleak_modules()
+        loop = asyncio.get_running_loop()
         while True:
             try:
+                await loop.run_in_executor(None, release_stale_connection, self.address)
                 device = await scanner_type.find_device_by_address(
                     self.address, timeout=FIND_TIMEOUT)
                 if device is None:
