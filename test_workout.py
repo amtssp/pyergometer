@@ -1518,7 +1518,30 @@ class WattWorkoutTests(unittest.TestCase):
             controller.control_step(0)
             changes.extend(controller.device.changes)
         # 50, 15, 7 and 3 beats below the target.
-        self.assertEqual(changes, [2.0, 0.75, 0.15, 0.03])
+        self.assertEqual(changes, [1.0, 0.5, 0.15, 0.03])
+        # Above the target the load comes down faster.
+        changes = []
+        for pulse in (170, 155):
+            controller = self.pulse_controller(pulse=pulse, target=140)
+            controller.control_step(0)
+            changes.extend(controller.device.changes)
+        self.assertEqual(changes, [-2.0, -0.75])
+
+    def test_a_hanging_pulse_stops_the_load_from_rising(self):
+        controller = self.phase_controller([], lambda second: 105, pulse=94, power=60)
+        for second in range(60):
+            controller.device.pulse = 94 + second % 2      # the watch shows 94-95, no more
+            controller.control_step(second)
+        risen = controller.device.power
+        for second in range(60, 120):
+            controller.control_step(second)
+        # It rose while the pulse might still follow, then waited once 15 W brought nothing.
+        self.assertGreater(risen, 60)
+        self.assertLess(risen - 60, 40)
+        self.assertEqual(controller.device.power, risen)
+        controller.device.pulse = 99                         # the pulse moves again
+        controller.control_step(120)
+        self.assertGreater(controller.device.power, risen)
 
     def phase_controller(self, points, targets, pulse=110, power=100):
         class Device(object):
@@ -1547,7 +1570,7 @@ class WattWorkoutTests(unittest.TestCase):
     def test_new_rider_finds_the_load_by_control_alone(self):
         controller = self.phase_controller([], lambda second: 145)
         controller.control_step(0)
-        self.assertEqual(controller.device.loads, [102.0])
+        self.assertEqual(controller.device.loads, [101.0])
         self.assertIsNone(controller.hold)
 
     def test_known_target_jumps_with_extra_load_and_settles_near_the_target(self):
@@ -1556,12 +1579,21 @@ class WattWorkoutTests(unittest.TestCase):
         controller.control_step(0)
         controller.device.loads = []
 
-        controller.control_step(10)       # the hard interval starts: 150 W + 15 %, at most +30 W
+        controller.control_step(10)       # the hard interval starts: 150 W + 8 %, at most +15 W
         controller.control_step(11)       # the pulse is still far below: the load is held
         controller.device.pulse = 136
         controller.control_step(12)       # within 10 beats: back to the expected load
 
-        self.assertEqual(controller.device.loads, [172.5, 150.0])
+        self.assertEqual(controller.device.loads, [162.0, 150.0])
+
+    def test_the_extra_load_lasts_at_most_45_seconds(self):
+        points = [{'pulse': 114.0, 'watts': 70.0}, {'pulse': 145.0, 'watts': 150.0}]
+        controller = self.phase_controller(points, lambda second: 113 if second < 10 else 145, pulse=115)
+        controller.control_step(0)
+        controller.device.loads = []
+        for second in range(10, 60):      # the pulse lags far below the whole time
+            controller.control_step(second)
+        self.assertEqual(controller.device.loads, [162.0, 150.0])
 
     def test_rest_drops_the_load_at_once(self):
         points = [{'pulse': 114.0, 'watts': 70.0}, {'pulse': 145.0, 'watts': 150.0}]

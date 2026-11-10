@@ -23,7 +23,15 @@ EXHAUSTED_SECONDS = 5
 
 # Pulse control: watts changed per second for a pulse this many beats from target.
 # Far from target the load moves fast; close to it slowly, as the pulse lags behind.
-PULSE_CONTROL_STEPS = ((20, 2.0), (10, 0.75), (5, 0.15), (0, 0.03))
+# It comes down faster than it goes up: a quick rest is safe, a quick rise tires the legs.
+PULSE_CONTROL_STEPS = ((20, 1.0), (10, 0.5), (5, 0.15), (0, 0.03))
+PULSE_CONTROL_STEPS_DOWN = ((20, 2.0), (10, 0.75), (5, 0.15), (0, 0.03))
+# A watch whose reading hangs makes control keep raising the load. When the pulse has
+# not moved more than STALL_BEATS for STALL_SECONDS while the load rose by STALL_WATTS
+# since it last moved, the load waits until the pulse moves.
+STALL_SECONDS = 40
+STALL_BEATS = 2
+STALL_WATTS = 15
 
 # When the pulse target changes by this much, the load jumps to the one expected to
 # hold the new target (from the rider's steady points) and stays there while the pulse
@@ -31,10 +39,11 @@ PULSE_CONTROL_STEPS = ((20, 2.0), (10, 0.75), (5, 0.15), (0, 0.03))
 PHASE_CHANGE_BEATS = 8
 HOLD_BEATS = 10
 HOLD_SECONDS = 90
-# Going up, the load starts above the expected one so the lagging pulse rises sooner;
-# going down, below it so the rider gets the rest at once.
-RISE_EXTRA = 0.15
-RISE_EXTRA_MAX_WATTS = 30
+# Going up, the load starts a little above the expected one for RISE_EXTRA_SECONDS so
+# the lagging pulse rises sooner; going down, below it so the rider gets the rest at once.
+RISE_EXTRA = 0.08
+RISE_EXTRA_MAX_WATTS = 15
+RISE_EXTRA_SECONDS = 45
 FALL_SHARE = 0.75
 # A target far from every point is a guess, so the load only moves part of the way.
 GUESS_SHARE = 0.75
@@ -64,6 +73,8 @@ class Ergometer:
         self.steady_window = SteadyWindow()
         self.last_target = None
         self.hold = None
+        # (second, pulse, load) when the pulse last moved, to notice a hanging pulse.
+        self.pulse_moved = None
 
         if log:
             self.logtemp = tempfile.NamedTemporaryFile(mode='w', delete=False)
@@ -219,7 +230,13 @@ class Ergometer:
             if self.last_target is None or abs(target - self.last_target) >= PHASE_CHANGE_BEATS:
                 self.start_phase(elapsed, target, first=self.last_target is None)
             self.last_target = target
+            if self.pulse_moved is None or abs(self.device.pulse - self.pulse_moved[1]) > STALL_BEATS:
+                self.pulse_moved = (elapsed, self.device.pulse, self.device.power)
             if self.hold:
+                if self.hold['settle'] is not None and elapsed >= self.hold['settle_at']:
+                    # The extra load has had its time; hold the expected load from here.
+                    self.device.set_power(absolute=self.hold['settle'])
+                    self.hold['settle'] = None
                 if abs(target - self.device.pulse) > HOLD_BEATS and elapsed < self.hold['until']:
                     return
                 settle = self.hold['settle']
@@ -233,9 +250,12 @@ class Ergometer:
             if -5.0 <= difference <= 0:
                 return
 
+            if difference > 5 and self.pulse_hangs(elapsed):
+                return  # wait for the pulse to follow before adding more load
+
             absolute_difference = abs(difference)
             relative_change = 0.0
-            for beats, change in PULSE_CONTROL_STEPS:
+            for beats, change in (PULSE_CONTROL_STEPS if difference > 0 else PULSE_CONTROL_STEPS_DOWN):
                 if absolute_difference > beats:
                     relative_change = change
                     break
@@ -243,9 +263,15 @@ class Ergometer:
             self.device.set_power(
                 relative=relative_change if difference > 0 else -relative_change)
 
+    def pulse_hangs(self, elapsed):
+        """Whether the pulse stood still for STALL_SECONDS while the load kept rising."""
+        second, unused_pulse, power = self.pulse_moved
+        return elapsed - second >= STALL_SECONDS and self.device.power - power >= STALL_WATTS
+
     def start_phase(self, elapsed, target, first=False):
         """Jump to the load expected to hold a new pulse target, if the rider's points tell it."""
         self.hold = None
+        self.pulse_moved = None  # the jump itself is not a rise the pulse failed to follow
         expected, known = estimate_watts(self.pulse_points, target)
         if expected is None:
             return  # a new rider: the load is found by control alone
@@ -266,7 +292,8 @@ class Ergometer:
             self.device.set_power(absolute=expected)
             return
         self.device.set_power(absolute=wanted)
-        self.hold = {'until': elapsed + HOLD_SECONDS, 'settle': settle}
+        self.hold = {'until': elapsed + HOLD_SECONDS, 'settle': settle,
+                     'settle_at': elapsed + RISE_EXTRA_SECONDS}
         sys.stderr.write('\nNew pulse target %d: load %d W (expected %d W%s)\n' % (
             target, wanted, expected, '' if known else ', a guess'))
 
